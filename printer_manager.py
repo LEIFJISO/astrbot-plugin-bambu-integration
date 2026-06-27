@@ -12,6 +12,14 @@ STATE_FINISH = "FINISH"
 STATE_FAILED = "FAILED"
 STATE_INIT = "INIT"
 
+_INCREMENTAL_KEEP_KEYS = (
+    "gcode_state", "mc_percent", "mc_remaining_time", "layer_num", "total_layer_num",
+    "chamber_temper", "print_error", "hms", "spd_lvl", "spd_mag",
+    "cooling_fan_speed", "heatbreak_fan_speed", "big_fan1_speed", "big_fan2_speed",
+    "wifi_signal", "gcode_file", "task_id", "job_id", "subtask_name",
+    "nozzle_diameter", "nozzle_type", "sdcard", "online", "name",
+)
+
 
 @dataclass
 class AMSTray:
@@ -175,8 +183,11 @@ class PrinterManager:
             self._states[serial].name = name
 
     def update_from_pushall(self, serial: str, data: dict) -> Optional[PrinterState]:
-        is_h2d = _is_h2d_model(data)
+        msg = data.get("msg", 0)
+        is_incremental = msg != 0
+        old_state = self._states.get(serial)
 
+        is_h2d = _is_h2d_model(data)
         if is_h2d:
             nozzle_current, nozzle_target, bed_current, bed_target = _parse_temperature_h2d(data)
         else:
@@ -221,7 +232,20 @@ class PrinterManager:
             raw=data,
         )
 
-        old_state = self._states.get(serial)
+        if is_incremental and old_state:
+            for key in _INCREMENTAL_KEEP_KEYS:
+                if key not in data:
+                    setattr(new_state, key, getattr(old_state, key))
+            if not ams_list:
+                new_state.ams = old_state.ams
+                new_state.ams_lowest_remain = old_state.ams_lowest_remain
+            if "nozzle_temper" not in data:
+                new_state.nozzle_temper = old_state.nozzle_temper
+                new_state.nozzle_target_temper = old_state.nozzle_target_temper
+            if "bed_temper" not in data:
+                new_state.bed_temper = old_state.bed_temper
+                new_state.bed_target_temper = old_state.bed_target_temper
+
         self._states[serial] = new_state
 
         was_init = self._initialized.get(serial, False)
