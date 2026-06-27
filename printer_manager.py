@@ -1,0 +1,264 @@
+from dataclasses import dataclass, field
+from typing import Optional, Callable, Any
+
+STATE_IDLE = "IDLE"
+STATE_RUNNING = "RUNNING"
+STATE_PAUSE = "PAUSE"
+STATE_PREPARE = "PREPARE"
+STATE_FINISH = "FINISH"
+STATE_FAILED = "FAILED"
+STATE_INIT = "INIT"
+
+
+@dataclass
+class AMSTray:
+    tray_id: str = ""
+    remain: int = 0
+    tray_type: str = ""
+    tray_sub_brands: str = ""
+    tray_color: str = ""
+    tray_weight: str = ""
+
+
+@dataclass
+class AMSInfo:
+    ams_id: str = ""
+    humidity: str = ""
+    temp: float = 0.0
+    trays: list[AMSTray] = field(default_factory=list)
+
+
+@dataclass
+class PrinterState:
+    serial: str = ""
+    name: str = ""
+    model: str = ""
+    gcode_state: str = ""
+    mc_percent: int = 0
+    mc_remaining_time: int = 0
+    nozzle_temper: float = 0.0
+    nozzle_target_temper: float = 0.0
+    bed_temper: float = 0.0
+    bed_target_temper: float = 0.0
+    chamber_temper: float = 0.0
+    layer_num: int = 0
+    total_layer_num: int = 0
+    print_error: int = 0
+    hms: list = field(default_factory=list)
+    spd_lvl: int = 0
+    spd_mag: int = 0
+    cooling_fan_speed: str = "0"
+    heatbreak_fan_speed: str = "0"
+    big_fan1_speed: str = "0"
+    big_fan2_speed: str = "0"
+    wifi_signal: str = ""
+    gcode_file: str = ""
+    task_id: str = ""
+    job_id: str = ""
+    subtask_name: str = ""
+    nozzle_diameter: str = ""
+    nozzle_type: str = ""
+    sdcard: bool = False
+    online: bool = False
+    ams: list[AMSInfo] = field(default_factory=list)
+    ams_lowest_remain: float = 100.0
+    ams_status: int = 0
+    lights_report: list = field(default_factory=list)
+    firmware_version: str = ""
+    raw: dict = field(default_factory=dict)
+
+
+def _parse_temperature_standard(data: dict) -> tuple[float, float, float, float]:
+    nozzle_current = float(data.get("nozzle_temper", 0) or 0)
+    nozzle_target = float(data.get("nozzle_target_temper", 0) or 0)
+    bed_current = float(data.get("bed_temper", 0) or 0)
+    bed_target = float(data.get("bed_target_temper", 0) or 0)
+    return nozzle_current, nozzle_target, bed_current, bed_target
+
+
+def _parse_temperature_h2d(data: dict) -> tuple[float, float, float, float]:
+    nozzle_current = 0.0
+    nozzle_target = 0.0
+    bed_current = 0.0
+    bed_target = 0.0
+
+    extruder_info = data.get("device", {}).get("extruder", {}).get("info", [])
+    if extruder_info:
+        raw = extruder_info[0].get("temp", 0)
+        nozzle_current = float(raw & 0xFFFF)
+        nozzle_target = float((raw >> 16) & 0xFFFF)
+
+    bed_info = data.get("device", {}).get("bed", {}).get("info", {})
+    raw_bed = bed_info.get("temp", 0)
+    if raw_bed:
+        bed_current = float(raw_bed & 0xFFFF)
+        bed_target = float((raw_bed >> 16) & 0xFFFF)
+    else:
+        bed_current = float(data.get("bed_temper", 0) or 0)
+        bed_target = float(data.get("bed_target_temper", 0) or 0)
+
+    return nozzle_current, nozzle_target, bed_current, bed_target
+
+
+def _parse_ams(data: dict) -> list[AMSInfo]:
+    ams_data = data.get("ams", {})
+    if not ams_data:
+        return []
+
+    result = []
+    ams_list = ams_data.get("ams", [])
+    if not isinstance(ams_list, list):
+        return result
+
+    for ams_unit in ams_list:
+        info = AMSInfo(
+            ams_id=str(ams_unit.get("id", "")),
+            humidity=str(ams_unit.get("humidity", "")),
+            temp=float(ams_unit.get("temp", 0) or 0),
+        )
+        for tray in ams_unit.get("tray", []):
+            info.trays.append(AMSTray(
+                tray_id=str(tray.get("id", "")),
+                remain=int(tray.get("remain", 0)),
+                tray_type=str(tray.get("tray_type", "")),
+                tray_sub_brands=str(tray.get("tray_sub_brands", "")),
+                tray_color=str(tray.get("tray_color", "")),
+                tray_weight=str(tray.get("tray_weight", "")),
+            ))
+        result.append(info)
+    return result
+
+
+def _lowest_remain(ams_list: list[AMSInfo]) -> float:
+    if not ams_list:
+        return 100.0
+    remains = [t.remain for a in ams_list for t in a.trays]
+    return float(min(remains)) if remains else 100.0
+
+
+def _is_h2d_model(data: dict) -> bool:
+    device = data.get("device", {})
+    if device.get("extruder", {}).get("info"):
+        return True
+    if device.get("bed", {}).get("info", {}).get("temp"):
+        return True
+    return False
+
+
+class PrinterManager:
+    def __init__(self):
+        self._states: dict[str, PrinterState] = {}
+        self._initialized: dict[str, bool] = {}
+        self._models: dict[str, str] = {}
+        self._on_state_change: Optional[Callable] = None
+
+    def set_callback(self, callback: Callable):
+        self._on_state_change = callback
+
+    def get_state(self, serial: str) -> Optional[PrinterState]:
+        return self._states.get(serial)
+
+    def get_states(self) -> dict[str, PrinterState]:
+        return dict(self._states)
+
+    def is_initialized(self, serial: str) -> bool:
+        return self._initialized.get(serial, False)
+
+    def set_model(self, serial: str, model: str, name: str = ""):
+        self._models[serial] = model
+        if serial in self._states:
+            self._states[serial].model = model
+        if name and serial in self._states:
+            self._states[serial].name = name
+
+    def update_from_pushall(self, serial: str, data: dict) -> Optional[PrinterState]:
+        is_h2d = _is_h2d_model(data)
+
+        if is_h2d:
+            nozzle_current, nozzle_target, bed_current, bed_target = _parse_temperature_h2d(data)
+        else:
+            nozzle_current, nozzle_target, bed_current, bed_target = _parse_temperature_standard(data)
+
+        ams_list = _parse_ams(data)
+
+        new_state = PrinterState(
+            serial=serial,
+            name=data.get("name", ""),
+            model=self._models.get(serial, ""),
+            gcode_state=str(data.get("gcode_state", "")),
+            mc_percent=int(data.get("mc_percent", 0)),
+            mc_remaining_time=int(data.get("mc_remaining_time", 0)),
+            nozzle_temper=nozzle_current,
+            nozzle_target_temper=nozzle_target,
+            bed_temper=bed_current,
+            bed_target_temper=bed_target,
+            chamber_temper=float(data.get("chamber_temper", 0) or 0),
+            layer_num=int(data.get("layer_num", 0)),
+            total_layer_num=int(data.get("total_layer_num", 0)),
+            print_error=int(data.get("print_error", 0)),
+            hms=data.get("hms", []),
+            spd_lvl=int(data.get("spd_lvl", 0)),
+            spd_mag=int(data.get("spd_mag", 0)),
+            cooling_fan_speed=str(data.get("cooling_fan_speed", "0")),
+            heatbreak_fan_speed=str(data.get("heatbreak_fan_speed", "0")),
+            big_fan1_speed=str(data.get("big_fan1_speed", "0")),
+            big_fan2_speed=str(data.get("big_fan2_speed", "0")),
+            wifi_signal=str(data.get("wifi_signal", "")),
+            gcode_file=str(data.get("gcode_file", "")),
+            task_id=str(data.get("task_id", "")),
+            job_id=str(data.get("job_id", "")),
+            subtask_name=str(data.get("subtask_name", "")),
+            nozzle_diameter=str(data.get("nozzle_diameter", "")),
+            nozzle_type=str(data.get("nozzle_type", "")),
+            sdcard=bool(data.get("sdcard", False)),
+            online=bool(data.get("online", {}).get("ahb", True)) if isinstance(data.get("online"), dict) else True,
+            ams=ams_list,
+            ams_lowest_remain=_lowest_remain(ams_list),
+            lights_report=data.get("lights_report", []),
+            raw=data,
+        )
+
+        old_state = self._states.get(serial)
+        self._states[serial] = new_state
+
+        was_init = self._initialized.get(serial, False)
+        if not was_init:
+            self._initialized[serial] = True
+            return new_state
+
+        if self._on_state_change and old_state:
+            self._on_state_change(serial, old_state, new_state)
+
+        return new_state
+
+    def update_firmware_info(self, serial: str, info_data: dict):
+        modules = info_data.get("module", [])
+        for mod in modules:
+            if mod.get("name") == "ota":
+                self._models[serial] = mod.get("project_name", "")
+                if serial in self._states:
+                    self._states[serial].model = mod.get("project_name", "")
+                self._states[serial].firmware_version = mod.get("sw_ver", "")
+                break
+
+    def mark_offline(self, serial: str):
+        if serial in self._states:
+            old = self._states[serial]
+            if not old.online:
+                return
+            new = PrinterState(**{k: v for k, v in old.__dict__.items()})
+            new.online = False
+            self._states[serial] = new
+            if self._on_state_change:
+                self._on_state_change(serial, old, new)
+
+    def mark_online(self, serial: str):
+        if serial in self._states:
+            old = self._states[serial]
+            if old.online:
+                return
+            new = PrinterState(**{k: v for k, v in old.__dict__.items()})
+            new.online = True
+            self._states[serial] = new
+            if self._on_state_change:
+                self._on_state_change(serial, old, new)

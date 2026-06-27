@@ -1,0 +1,236 @@
+{
+  "cloud": {
+    "description": "拓竹云 API 配置",
+    "type": "object",
+    "hint": "推荐使用 /bambu login 交互登录（自动填写 token）。也可手动填写下方三个字段",
+    "obvious_hint": true,
+    "items": {
+      "region": {
+        "description": "区域",
+        "type": "string",
+        "default": "cn",
+        "options": ["cn", "global"],
+        "hint": "中国大陆选 cn，其他地区选 global"
+      },
+      "account": {
+        "description": "账号",
+        "type": "string",
+        "default": "",
+        "hint": "手机号或邮箱。留空则通过 /bambu login <账号> 交互登录"
+      },
+      "access_token": {
+        "description": "Access Token",
+        "type": "string",
+        "default": "",
+        "hint": "从拓竹云获取的 token。推荐使用 /bambu login 自动获取并回填，也可手动粘贴已有 token"
+      }
+    }
+  },
+  "notify": {
+    "description": "推送目标",
+    "type": "object",
+    "items": {
+      "session_id": {
+        "description": "推送目标 SID",
+        "type": "string",
+        "default": "",
+        "hint": "格式 platform:type:session_id。执行 /bambu login 时自动记录，也可手动填写多个，用逗号分隔"
+      }
+    }
+  },
+  "monitor": {
+    "description": "监控设置",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "启用监控",
+        "type": "bool",
+        "default": true,
+        "hint": "关闭后不连接 MQTT，不推送任何提醒"
+      },
+      "alert_delay": {
+        "description": "非错误提醒去抖延迟（秒）",
+        "type": "int",
+        "default": 90,
+        "hint": "进度、耗材、降温等非紧急事件在此时间内合并后一起推送。0 表示实时发送"
+      }
+    }
+  },
+  "push": {
+    "description": "推送通道",
+    "type": "object",
+    "items": {
+      "mode": {
+        "description": "推送模式",
+        "type": "string",
+        "default": "native",
+        "options": ["native", "ai", "both"],
+        "hint": "native: 插件直接发送格式化通知；ai: 由 LLM 生成通知文案（失败降级 native）；both: 两条路径同时推送"
+      },
+      "enable_llm_tools": {
+        "description": "启用 LLM 查询工具",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后 LLM 可在对话中调用打印机信息查询工具（路径 B）"
+      },
+      "ai_prompt": {
+        "description": "AI 推送提示词模板",
+        "type": "text",
+        "default": "用户的打印机状态发生了变化，请根据以下数据用简洁自然的中文告知用户：\n\n打印机：{printer_name}（{printer_model}）\n事件：{event_type}\n状态数据：{state_summary}\n\n要求：简洁自然，无需问候语。故障类事件着重提醒错误信息。不要编造或猜测数据中没有的信息。",
+        "hint": "路径 C (AI Push) 使用此模板生成通知。支持变量: {printer_name} {printer_model} {event_type} {state_summary}",
+        "editor_mode": true,
+        "editor_language": "plaintext"
+      }
+    }
+  },
+  "alerts": {
+    "description": "内置提醒设置",
+    "type": "object",
+    "items": {
+      "on_complete": {
+        "description": "打印完成提醒",
+        "type": "bool",
+        "default": true
+      },
+      "on_error": {
+        "description": "打印失败提醒",
+        "type": "bool",
+        "default": true
+      },
+      "on_filament_low": {
+        "description": "耗材不足提醒",
+        "type": "bool",
+        "default": true
+      },
+      "on_cooldown": {
+        "description": "热床降温完成提醒",
+        "type": "bool",
+        "default": true
+      },
+      "on_offline": {
+        "description": "打印机离线提醒",
+        "type": "bool",
+        "default": true,
+        "hint": "打印机断线超过 60 秒时提醒"
+      },
+      "on_recovery": {
+        "description": "打印机恢复提醒",
+        "type": "bool",
+        "default": true,
+        "hint": "打印机从离线恢复时提醒"
+      },
+      "progress_nodes": {
+        "description": "进度提醒节点",
+        "type": "string",
+        "default": "50,90",
+        "hint": "逗号分隔的百分比，如 25,50,75,90。在打印中（RUNNING）状态生效"
+      },
+      "filament_threshold": {
+        "description": "耗材余量阈值 (%)",
+        "type": "int",
+        "default": 10,
+        "hint": "AMS 槽位余量低于此值时触发提醒。无 AMS 机型自动跳过"
+      }
+    }
+  },
+  "mutes": {
+    "description": "静默时段",
+    "type": "object",
+    "hint": "格式 HH:MM-HH:MM，留空则不静默。跨天直接写如 23:00-07:00。错误提醒不受静默影响",
+    "items": {
+      "mute_complete": {
+        "description": "完成提醒静默",
+        "type": "string",
+        "default": "23:00-07:00"
+      },
+      "mute_error": {
+        "description": "失败提醒静默",
+        "type": "string",
+        "default": "",
+        "hint": "建议留空（错误提醒始终通知）"
+      },
+      "mute_filament": {
+        "description": "耗材提醒静默",
+        "type": "string",
+        "default": "23:00-07:00"
+      },
+      "mute_progress": {
+        "description": "进度提醒静默",
+        "type": "string",
+        "default": "23:00-07:00"
+      },
+      "mute_cooldown": {
+        "description": "降温提醒静默",
+        "type": "string",
+        "default": "23:00-07:00"
+      },
+      "mute_offline": {
+        "description": "离线提醒静默",
+        "type": "string",
+        "default": ""
+      },
+      "mute_recovery": {
+        "description": "恢复提醒静默",
+        "type": "string",
+        "default": "23:00-07:00"
+      }
+    }
+  },
+  "custom_rules": {
+    "description": "自定义提醒规则",
+    "type": "template_list",
+    "hint": "用 Python 表达式定义触发条件。示例：gcode_state == 'FINISH' and bed_temper <= 40。可用变量详见 README",
+    "templates": {
+      "rule": {
+        "name": "规则",
+        "hint": "自定义一条状态变化提醒规则。条件使用 Python 语法，在受限命名空间中执行（仅变量比较和逻辑运算）",
+        "display_item": "name",
+        "items": {
+          "name": {
+            "description": "规则名称",
+            "type": "string",
+            "default": ""
+          },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "condition": {
+            "description": "触发条件",
+            "type": "string",
+            "default": "",
+            "hint": "Python 表达式。示例：gcode_state == 'FINISH' and bed_temper <= 40\n可用变量及说明详见 README",
+            "editor_mode": true,
+            "editor_language": "python"
+          },
+          "message": {
+            "description": "通知消息",
+            "type": "string",
+            "default": "",
+            "hint": "支持变量占位，如 打印完成，热床已降至{bed_temper:.0f}°C。可用所有变量名作为占位符"
+          },
+          "trigger_mode": {
+            "description": "触发模式",
+            "type": "string",
+            "default": "edge",
+            "options": ["edge", "level"],
+            "hint": "edge: 条件从不成立变为成立时触发一次（默认，适合状态切换类条件）\nlevel: 条件持续成立时按冷却时间重复推送（适合持续告警类条件）"
+          },
+          "mute": {
+            "description": "静默时段",
+            "type": "string",
+            "default": "",
+            "hint": "格式 HH:MM-HH:MM，留空不静默"
+          },
+          "cooldown": {
+            "description": "冷却时间（秒）",
+            "type": "int",
+            "default": 300,
+            "hint": "edge 模式：跃变后防抖间隔。level 模式：重复推送间隔"
+          }
+        }
+      }
+    }
+  }
+}

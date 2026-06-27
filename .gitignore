@@ -201,6 +201,10 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Test scripts (may contain tokens)
+test_mqtt.py
+_test_*.py
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
