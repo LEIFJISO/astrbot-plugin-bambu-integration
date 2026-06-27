@@ -17,7 +17,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.2.0")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.2.1")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -33,9 +33,7 @@ class BambuPlugin(Star):
 
         self._alert_engine.set_native_callback(self._on_native_push)
         self._alert_engine.set_ai_callback(self._on_ai_push)
-
-        if self._config.get("notify", {}).get("session_id"):
-            self._manager.set_callback(self._alert_engine.on_state_change)
+        self._manager.set_callback(self._alert_engine.on_state_change)
 
     # ========== lifecycle ==========
 
