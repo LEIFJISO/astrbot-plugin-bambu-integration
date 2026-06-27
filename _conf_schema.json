@@ -232,5 +232,54 @@
         }
       }
     }
+  },
+  "maintenance_tasks": {
+    "description": "维护任务提醒",
+    "type": "template_list",
+    "hint": "按打印小时或完成次数自动触发维护提醒。跳过下次提醒使用 /bambu maintenance skip <名称>",
+    "templates": {
+      "task": {
+        "name": "任务",
+        "hint": "定义一个周期性维护提醒任务",
+        "display_item": "name",
+        "items": {
+          "name": {
+            "description": "任务名称",
+            "type": "string",
+            "default": ""
+          },
+          "enabled": {
+            "description": "启用",
+            "type": "bool",
+            "default": true
+          },
+          "type": {
+            "description": "计数类型",
+            "type": "string",
+            "default": "hours",
+            "options": ["hours", "completions"],
+            "hint": "hours: 按打印累计时长触发。completions: 按打印完成次数触发"
+          },
+          "interval": {
+            "description": "间隔",
+            "type": "int",
+            "default": 80,
+            "hint": "跨过此间隔的 N 倍时触发"
+          },
+          "message": {
+            "description": "提醒消息",
+            "type": "string",
+            "default": "",
+            "hint": "支持 {print_hours}, {completion_count} 等占位符"
+          },
+          "mute": {
+            "description": "静默时段",
+            "type": "string",
+            "default": "",
+            "hint": "格式 HH:MM-HH:MM，留空不静默"
+          }
+        }
+      }
+    }
   }
 }

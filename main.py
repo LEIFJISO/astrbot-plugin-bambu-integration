@@ -2,6 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import json
 import asyncio
 from typing import Optional
 
@@ -16,7 +17,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.1.0")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.2.0")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -39,6 +40,9 @@ class BambuPlugin(Star):
     # ========== lifecycle ==========
 
     async def initialize(self):
+        self._state_path = os.path.join("data", "bambu_state.json")
+        self._load_state()
+        asyncio.create_task(self._periodic_save())
         token = self._config.get("cloud", {}).get("access_token", "")
         if token and not self._tools_registered and self._config.get("push", {}).get("enable_llm_tools", True):
             await self._register_tools()
@@ -46,7 +50,34 @@ class BambuPlugin(Star):
             await self._start_mqtt()
 
     async def terminate(self):
+        self._save_state()
         await self._stop_mqtt()
+
+    def _load_state(self):
+        try:
+            with open(self._state_path, "r") as f:
+                data = json.load(f)
+            self._alert_engine.load_counters(data.get("counters", {}))
+            self._alert_engine.load_maintenance_triggers(data.get("maintenance_triggers", {}))
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+
+    def _save_state(self):
+        data = {
+            "counters": self._alert_engine.get_counters(),
+            "maintenance_triggers": self._alert_engine._maintenance_trigger,
+        }
+        try:
+            os.makedirs("data", exist_ok=True)
+            with open(self._state_path, "w") as f:
+                json.dump(data, f)
+        except Exception:
+            pass
+
+    async def _periodic_save(self):
+        while True:
+            await asyncio.sleep(300)
+            self._save_state()
 
     # ========== tools ==========
 
@@ -273,6 +304,13 @@ class BambuPlugin(Star):
             "  /bambu rules - 自定义规则\n"
             "  /bambu rule add/set/del/on/off/test <名字> - 管理规则\n"
             "  /bambu rule vars - 可用变量\n"
+            "  /bambu counters - 查看计数器\n"
+            "  /bambu counter set <名称> <值> - 设置计数器\n"
+            "  /bambu maintenance - 维护任务\n"
+            "  /bambu maintenance skip <名称> - 跳过下次提醒\n"
+            "  /bambu maintenance mute <名称> <HH:MM> <HH:MM> - 设置静默\n"
+            "  /bambu help - 帮助\n"
+            "\n登录方式：\n"
             "\n登录方式：\n"
             "  1. 在 WebUI 配置页面直接填写 Access Token\n"
             "  2. 使用 /bambu login 交互登录（推荐）\n"
@@ -436,6 +474,8 @@ class BambuPlugin(Star):
             silent_history = self._alert_engine.get_silent_history(serial)
             if silent_history:
                 text += f"\n\n[静默期间经历: {'; '.join(silent_history)}]"
+            c = self._alert_engine.get_counters()
+            text += f"\n累计: {c['print_hours']:.1f}h | 完成: {int(c['completion_count'])}次"
             yield event.plain_result(text)
 
     @bambu.command("detail")
@@ -592,20 +632,7 @@ class BambuPlugin(Star):
         rules = self._config.get("custom_rules", [])
 
         parts = args.split(maxsplit=1)
-        if len(parts) < 2:
-            yield event.plain_result(
-                "用法：\n"
-                "  /bambu rule add <名字>\n"
-                "  /bambu rule set <名字> <字段> <值>\n"
-                "  /bambu rule del <名字>\n"
-                "  /bambu rule on/off <名字>\n"
-                "  /bambu rule test <名字>\n"
-                "  /bambu rule vars"
-            )
-            return
-
         action = parts[0]
-        target = parts[1] if len(parts) > 1 else ""
 
         if action == "vars":
             yield event.plain_result(
@@ -621,9 +648,26 @@ class BambuPlugin(Star):
                 "  spd_lvl / spd_mag - 速度档位/倍率\n"
                 "  serial - 序列号\n"
                 "  ams_lowest_remain - AMS 最低余量\n"
-                "  gcode_state_old - 上一次状态"
+                "  gcode_state_old - 上一次状态\n"
+                "  print_hours - 累计打印小时\n"
+                "  completion_count - 打印完成次数\n"
+                "  failure_consecutive - 连续失败次数"
             )
             return
+
+        if len(parts) < 2:
+            yield event.plain_result(
+                "用法：\n"
+                "  /bambu rule add <名字>\n"
+                "  /bambu rule set <名字> <字段> <值>\n"
+                "  /bambu rule del <名字>\n"
+                "  /bambu rule on/off <名字>\n"
+                "  /bambu rule test <名字>\n"
+                "  /bambu rule vars"
+            )
+            return
+
+        target = parts[1] if len(parts) > 1 else ""
 
         if action == "add":
             rules.append({
@@ -723,3 +767,116 @@ class BambuPlugin(Star):
                             yield event.plain_result(f"规则错误：{e}")
                     return
             yield event.plain_result(f"未找到规则：{target}")
+
+    @bambu.command("counters")
+    async def cmd_counters(self, event: AstrMessageEvent):
+        c = self._alert_engine.get_counters()
+        yield event.plain_result(
+            f"累计打印：{c['print_hours']:.1f} h\n"
+            f"完成次数：{int(c['completion_count'])} 次\n"
+            f"连续失败：{int(c['failure_consecutive'])} 次"
+        )
+
+    @bambu.command("counter")
+    async def cmd_counter(self, event: AstrMessageEvent):
+        msg = event.message_str.strip()
+        args = ""
+        for prefix in ("/bambu counter", "bambu counter", "counter"):
+            if msg.startswith(prefix):
+                args = msg[len(prefix):].strip()
+                break
+
+        parts = args.split(maxsplit=2)
+        if len(parts) < 2 or parts[0] != "set":
+            yield event.plain_result("用法：/bambu counter set <名称> <值>\n可用：print_hours, completion_count, failure_consecutive")
+            return
+
+        name, value_str = parts[1], parts[2] if len(parts) > 2 else "0"
+        try:
+            value = float(value_str)
+        except ValueError:
+            yield event.plain_result("值必须是数字")
+            return
+
+        if not self._alert_engine.set_counter(name, value):
+            yield event.plain_result(f"未知计数器：{name}")
+            return
+
+        self._save_state()
+        yield event.plain_result(f"计数器 {name} 已设为 {value}")
+
+    @bambu.command("maintenance")
+    async def cmd_maintenance(self, event: AstrMessageEvent):
+        msg = event.message_str.strip()
+        args = ""
+        for prefix in ("/bambu maintenance", "bambu maintenance", "maintenance"):
+            if msg.startswith(prefix):
+                args = msg[len(prefix):].strip()
+                break
+
+        tasks = self._config.get("maintenance_tasks", [])
+        c = self._alert_engine.get_counters()
+
+        if args.startswith("skip "):
+            name = args.replace("skip ", "", 1).strip()
+            for task in tasks:
+                if task.get("name") == name:
+                    counter_key = "print_hours" if task.get("type", "hours") == "hours" else "completion_count"
+                    current = c.get(counter_key, 0)
+                    for key in list(self._alert_engine._maintenance_trigger.keys()):
+                        if key.startswith(f"maint:{name}:"):
+                            self._alert_engine._maintenance_trigger[key] = current
+                            self._save_state()
+                            yield event.plain_result(f"已跳过 {name} 下次提醒，基准前移至 {current:.1f}")
+                            return
+                    yield event.plain_result(f"未找到维护任务：{name}")
+                    return
+            yield event.plain_result(f"未找到维护任务：{name}")
+            return
+
+        if args.startswith("mute "):
+            rest = args.replace("mute ", "", 1).strip()
+            parts = rest.split(maxsplit=1)
+            if len(parts) < 2:
+                yield event.plain_result("用法：/bambu maintenance mute <名称> <HH:MM> <HH:MM> 或 off")
+                return
+            name, tr = parts[0], parts[1].strip()
+            for task in tasks:
+                if task.get("name") == name:
+                    if tr == "off":
+                        task["mute"] = ""
+                    else:
+                        tparts = tr.split()
+                        task["mute"] = f"{tparts[0]}-{tparts[1]}" if len(tparts) >= 2 else tr
+                    self._config["maintenance_tasks"] = tasks
+                    self._config.save_config()
+                    yield event.plain_result(f"{name} 静默已{'取消' if tr == 'off' else '设置为 ' + task['mute']}")
+                    return
+            yield event.plain_result(f"未找到维护任务：{name}")
+            return
+
+        if not tasks:
+            yield event.plain_result("未配置维护任务。可在 WebUI 配置页面添加")
+            return
+
+        lines = [f"累计打印：{c['print_hours']:.1f}h | 完成：{int(c['completion_count'])}次\n"]
+        for task in tasks:
+            enabled = "启用" if task.get("enabled", True) else "禁用"
+            tt = task.get("type", "hours")
+            interval = task.get("interval", 0)
+            counter_key = "print_hours" if tt == "hours" else "completion_count"
+            current = c.get(counter_key, 0)
+            found_trigger = False
+            for key, val in self._alert_engine._maintenance_trigger.items():
+                if key.startswith(f"maint:{task.get('name')}:"):
+                    next_at = (int(val // interval) + 1) * interval if interval else 0
+                    remaining = max(0, next_at - current)
+                    lines.append(f"  [{enabled}] {task.get('name')} ({tt}, 每{interval} | 下次: {remaining:.0f}{'h' if tt == 'hours' else '次'}后)")
+                    found_trigger = True
+                    break
+            if not found_trigger:
+                lines.append(f"  [{enabled}] {task.get('name')} ({tt}, 每{interval})")
+            mute = task.get("mute", "")
+            if mute:
+                lines[-1] += f" 静默: {mute}"
+        yield event.plain_result("\n".join(lines))

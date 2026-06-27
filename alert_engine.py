@@ -203,6 +203,9 @@ class AlertEngine:
         self._task_ids: dict[str, set] = {}
         self._custom_last_trigger: dict[str, float] = {}
         self._rule_prev: dict[str, bool] = {}
+        self._counters: dict[str, float] = {"print_hours": 0, "completion_count": 0, "failure_consecutive": 0}
+        self._last_pushall_time: dict[str, float] = {}
+        self._maintenance_trigger: dict[str, float] = {}
         self._on_native: Optional[Callable] = None
         self._on_ai: Optional[Callable] = None
         self._silent_events: dict[str, list[str]] = {}
@@ -220,6 +223,24 @@ class AlertEngine:
 
     def get_silent_history(self, serial: str) -> list[str]:
         return self._silent_events.pop(serial, [])
+
+    def get_counters(self) -> dict:
+        return dict(self._counters)
+
+    def load_counters(self, data: dict):
+        for k in self._counters:
+            self._counters[k] = data.get(k, 0)
+
+    def load_maintenance_triggers(self, data: dict):
+        self._maintenance_trigger = data
+
+    def set_counter(self, name: str, value: float):
+        if name not in self._counters:
+            return False
+        self._counters[name] = value
+        for serial in self._last_state:
+            self._evaluate_maintenance(serial)
+        return True
 
     def _evaluate(self, serial: str, old: PrinterState, new: PrinterState):
         config = self._config
@@ -281,6 +302,9 @@ class AlertEngine:
         if custom_rules:
             all_events.extend(self._evaluate_custom_rules(old, new, custom_rules))
 
+        self._update_counters(serial, old, new)
+        self._evaluate_maintenance(serial)
+
         if alerts.get("on_offline", True) and old.online and not new.online:
             name = new.name or new.model or ""
             model = new.model or ""
@@ -338,6 +362,9 @@ class AlertEngine:
                     "serial": new.serial,
                     "ams_lowest_remain": new.ams_lowest_remain,
                     "gcode_state_old": old.gcode_state,
+                    "print_hours": round(self._counters["print_hours"], 1),
+                    "completion_count": int(self._counters["completion_count"]),
+                    "failure_consecutive": int(self._counters["failure_consecutive"]),
                 }
                 result = bool(eval(condition, {"__builtins__": {}}, vars_dict))
             except Exception:
@@ -391,6 +418,9 @@ class AlertEngine:
                     task_id=new.task_id,
                     gcode_file=new.gcode_file,
                     subtask_name=new.subtask_name,
+                    print_hours=round(self._counters["print_hours"], 1),
+                    completion_count=int(self._counters["completion_count"]),
+                    failure_consecutive=int(self._counters["failure_consecutive"]),
                 )
             except Exception:
                 msg = msg_template
@@ -402,6 +432,66 @@ class AlertEngine:
             ))
 
         return events
+
+    def _update_counters(self, serial: str, old: PrinterState, new: PrinterState):
+        now = time.time()
+        last = self._last_pushall_time.get(serial, now)
+        self._last_pushall_time[serial] = now
+
+        if old.gcode_state == STATE_RUNNING and new.gcode_state == STATE_RUNNING:
+            elapsed = now - last
+            if 0 < elapsed < 600:
+                self._counters["print_hours"] += elapsed / 3600.0
+
+        if old.gcode_state != STATE_FINISH and new.gcode_state == STATE_FINISH:
+            self._counters["completion_count"] += 1
+
+        if old.gcode_state != STATE_FAILED and new.gcode_state == STATE_FAILED:
+            self._counters["failure_consecutive"] += 1
+        elif new.gcode_state in (STATE_FINISH, STATE_RUNNING):
+            self._counters["failure_consecutive"] = 0
+
+    def _evaluate_maintenance(self, serial: str):
+        tasks = self._config.get("maintenance_tasks", [])
+        for task in tasks:
+            if not task.get("enabled", True):
+                continue
+            task_type = task.get("type", "hours")
+            interval = task.get("interval", 0)
+            if not interval:
+                continue
+
+            task_id = f"maint:{task.get('name', '')}:{serial}"
+            counter_key = "print_hours" if task_type == "hours" else "completion_count"
+            current = self._counters.get(counter_key, 0)
+
+            last_trigger = self._maintenance_trigger.get(task_id, 0)
+            if int(current // interval) <= int(last_trigger // interval):
+                continue
+
+            self._maintenance_trigger[task_id] = current
+
+            task_mute = task.get("mute", "")
+            if _mute_active(task_mute):
+                continue
+
+            msg = task.get("message", "")
+            try:
+                msg = msg.format(
+                    print_hours=round(self._counters["print_hours"], 1),
+                    completion_count=int(self._counters["completion_count"]),
+                    failure_consecutive=int(self._counters["failure_consecutive"]),
+                )
+            except Exception:
+                pass
+
+            name = self._last_state.get(serial)
+            printer_name = name.name or name.model or serial if name else serial
+            self.dispatch(AlertEvent(
+                EVENT_CUSTOM, serial, printer_name, name.model if name else "",
+                f"维护提醒: {task.get('name')}", f"维护提醒: {task.get('name')}",
+                custom_message=msg,
+            ))
 
     def dispatch(self, event: AlertEvent):
         mutes = self._config.get("mutes", {})
