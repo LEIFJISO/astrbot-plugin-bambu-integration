@@ -188,6 +188,8 @@ class PrinterManager:
         old_state = self._states.get(serial)
 
         is_h2d = _is_h2d_model(data)
+        logger.debug(f"[State] serial={serial[:12]} msg={msg} incr={is_incremental} h2d={is_h2d}")
+
         if is_h2d:
             nozzle_current, nozzle_target, bed_current, bed_target = _parse_temperature_h2d(data)
         else:
@@ -233,9 +235,13 @@ class PrinterManager:
         )
 
         if is_incremental and old_state:
+            merged_keys = []
             for key in _INCREMENTAL_KEEP_KEYS:
                 if key not in data:
                     setattr(new_state, key, getattr(old_state, key))
+                    merged_keys.append(key)
+            if merged_keys:
+                logger.debug(f"[State] merged {len(merged_keys)} keys from old: {merged_keys[:5]}...")
             if not ams_list:
                 new_state.ams = old_state.ams
                 new_state.ams_lowest_remain = old_state.ams_lowest_remain
@@ -252,11 +258,13 @@ class PrinterManager:
         if not was_init:
             self._initialized[serial] = True
             logger.info(f"[PrinterManager] {serial} 首次初始化: gcode_state={new_state.gcode_state}")
+            logger.debug(f"[State] first init, skipping callback for {serial[:12]}")
             return new_state
 
         if self._on_state_change and old_state:
             if old_state.gcode_state != new_state.gcode_state or old_state.mc_percent != new_state.mc_percent:
                 logger.info(f"[PrinterManager] {serial} 状态变化: {old_state.gcode_state}({old_state.mc_percent}%) -> {new_state.gcode_state}({new_state.mc_percent}%)")
+            logger.debug(f"[State] callback triggered: old={old_state.gcode_state}->new={new_state.gcode_state}")
             self._on_state_change(serial, old_state, new_state)
         elif not self._on_state_change:
             logger.warning(f"[PrinterManager] {serial} 回调未注册，状态变化被忽略")

@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import re
 import time
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from typing import Optional, Callable, Any
 
@@ -12,6 +13,8 @@ from printer_manager import (
     PrinterState, STATE_IDLE, STATE_RUNNING, STATE_PAUSE,
     STATE_PREPARE, STATE_FINISH, STATE_FAILED,
 )
+
+logger = logging.getLogger(__name__)
 
 EVENT_COMPLETE = "complete"
 EVENT_ERROR = "error"
@@ -330,9 +333,12 @@ class AlertEngine:
             if new.task_id in sent_task_ids and e.event_type != EVENT_ERROR:
                 continue
             filtered.append(e)
-            if new.task_id:
-                sent_task_ids.add(new.task_id)
+        if new.task_id:
+            sent_task_ids.add(new.task_id)
 
+        if filtered:
+            types = [e.event_type for e in filtered]
+            logger.debug(f"[Alert] serial={serial[:12]} events={types}")
         self._flash.process(serial, filtered)
 
     def _evaluate_custom_rules(self, old: PrinterState, new: PrinterState, rules: list) -> list[AlertEvent]:
@@ -497,15 +503,19 @@ class AlertEngine:
         mutes = self._config.get("mutes", {})
         mute_key = f"mute_{event.event_type}"
         mute_range = mutes.get(mute_key, "")
+        push_config = self._config.get("push", {})
+        mode = push_config.get("mode", "native")
 
         if _mute_active(mute_range) and event.event_type != EVENT_ERROR:
             self._silent_events.setdefault(event.serial, []).append(
                 f"[{time.strftime('%H:%M')}] {event.message}"
             )
+            logger.debug(f"[Dispatch] serial={event.serial[:12]} type={event.event_type} MUTED")
             return
 
         push_config = self._config.get("push", {})
         mode = push_config.get("mode", "native")
+        logger.debug(f"[Dispatch] serial={event.serial[:12]} type={event.event_type} mode={mode} native={bool(self._on_native)} ai={bool(self._on_ai)}")
 
         if mode in ("native", "both"):
             native_msg = _build_native_message(event)
@@ -553,6 +563,10 @@ class FlashQueue:
                 if key in (EVENT_PROGRESS, EVENT_COOLDOWN):
                     queue["events"].pop(key, None)
 
+        queued_types = list(queue["events"].keys())
+        delay = 30 if EVENT_COMPLETE in queue["events"] else self._engine._config.get("monitor", {}).get("alert_delay", 90)
+        logger.debug(f"[Flash] serial={serial[:12]} queued={queued_types} delay={delay}s")
+
         self._reschedule(serial)
 
     def _reschedule(self, serial: str):
@@ -574,6 +588,7 @@ class FlashQueue:
     async def _flush(self, serial: str):
         queue = self._queues.pop(serial, {})
         events_dict = queue.get("events", {})
+        logger.debug(f"[Flash] flushing {len(events_dict)} events for {serial[:12]}: {list(events_dict.keys())}")
         for event in events_dict.values():
             self._engine.dispatch(event)
         self._timers.pop(serial, None)

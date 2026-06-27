@@ -2,6 +2,17 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# 清除子模块缓存以支持热重载
+_plugin_dir = os.path.dirname(os.path.abspath(__file__))
+for _name in list(sys.modules):
+    _mod = sys.modules[_name]
+    _f = getattr(_mod, '__file__', '')
+    if _f and os.path.abspath(_f).startswith(os.path.abspath(_plugin_dir)) and _name != __name__:
+        del sys.modules[_name]
+
+import importlib
+importlib.invalidate_caches()
+
 import json
 import asyncio
 from typing import Optional
@@ -17,7 +28,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.2.4")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.3.0")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)

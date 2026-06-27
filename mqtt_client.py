@@ -136,6 +136,7 @@ class BambuMQTTClient:
             self._loop.call_soon_threadsafe(
                 self._queue.put_nowait, (message.topic, message.payload)
             )
+            logger.debug(f"[MQTT] enqueued: topic={message.topic} size={len(message.payload)}")
 
     async def _consume(self):
         while self._running:
@@ -172,6 +173,8 @@ class BambuMQTTClient:
             return
 
         if "print" in data:
+            p = data["print"]
+            logger.debug(f"[MQTT] serial={serial} print msg={p.get('msg',0)} state={p.get('gcode_state','?')} mc={p.get('mc_percent',0)}%")
             self._manager.update_from_pushall(serial, data["print"])
         elif "info" in data and data["info"].get("command") == "get_version":
             self._manager.update_firmware_info(serial, data["info"])
