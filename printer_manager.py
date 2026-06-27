@@ -1,5 +1,8 @@
+import logging
 from dataclasses import dataclass, field
 from typing import Optional, Callable, Any
+
+logger = logging.getLogger(__name__)
 
 STATE_IDLE = "IDLE"
 STATE_RUNNING = "RUNNING"
@@ -224,10 +227,17 @@ class PrinterManager:
         was_init = self._initialized.get(serial, False)
         if not was_init:
             self._initialized[serial] = True
+            logger.info(f"[PrinterManager] {serial} 首次初始化: gcode_state={new_state.gcode_state}")
             return new_state
 
         if self._on_state_change and old_state:
+            if old_state.gcode_state != new_state.gcode_state or old_state.mc_percent != new_state.mc_percent:
+                logger.info(f"[PrinterManager] {serial} 状态变化: {old_state.gcode_state}({old_state.mc_percent}%) -> {new_state.gcode_state}({new_state.mc_percent}%)")
             self._on_state_change(serial, old_state, new_state)
+        elif not self._on_state_change:
+            logger.warning(f"[PrinterManager] {serial} 回调未注册，状态变化被忽略")
+        elif not old_state:
+            logger.warning(f"[PrinterManager] {serial} 无旧状态，跳过评估")
 
         return new_state
 

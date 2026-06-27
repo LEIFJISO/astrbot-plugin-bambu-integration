@@ -17,7 +17,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.2.2")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.2.3")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -141,7 +141,12 @@ class BambuPlugin(Star):
         return [s.strip() for s in raw.split(",") if s.strip()]
 
     async def _send_to_session(self, text: str):
-        for umo in self._get_notify_targets():
+        targets = self._get_notify_targets()
+        if not targets:
+            logger.warning(f"无推送目标，通知被丢弃: {text[:80]}")
+            return
+        logger.info(f"推送通知到 {len(targets)} 个目标: {text[:80]}")
+        for umo in targets:
             try:
                 chain = MessageChain().message(text)
                 await self.context.send_message(umo, chain)
@@ -149,6 +154,7 @@ class BambuPlugin(Star):
                 logger.warning(f"发送通知到 {umo} 失败: {e}")
 
     async def _on_native_push(self, serial: str, message: str):
+        logger.info(f"[推送-原生] serial={serial} msg={message[:60]}")
         asyncio.create_task(self._send_to_session(message))
 
     async def _on_ai_push(self, event: AlertEvent):
