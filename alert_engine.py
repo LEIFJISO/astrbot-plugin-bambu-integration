@@ -525,7 +525,7 @@ class AlertEngine:
 
         if mode in ("ai", "both"):
             if self._on_ai:
-                self._on_ai(event)
+                asyncio.create_task(self._on_ai(event))
 
 
 class FlashQueue:

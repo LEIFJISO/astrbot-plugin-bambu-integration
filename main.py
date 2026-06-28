@@ -28,7 +28,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.0")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.1")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -198,7 +198,7 @@ class BambuPlugin(Star):
             except Exception as e:
                 logger.warning(f"发送通知到 {umo} 失败: {e}")
 
-    async def _on_native_push(self, serial: str, message: str):
+    def _on_native_push(self, serial: str, message: str):
         logger.info(f"[推送-原生] serial={serial} msg={message[:60]}")
         asyncio.create_task(self._send_to_session(message))
 
@@ -477,7 +477,7 @@ class BambuPlugin(Star):
         push_mode = self._config.get("push", {}).get("mode", "native")
 
         lines = [
-            f"版本：v1.3.1",
+            f"版本：v1.4.1",
             f"登录状态：{'已登录' if token else '未登录'}",
             f"账号：{cloud.get('account', '未设置')}",
             f"区域：{cloud.get('region', 'cn')}",
