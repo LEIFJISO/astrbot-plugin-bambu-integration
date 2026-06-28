@@ -40,6 +40,7 @@ class AMSTray:
 class AMSInfo:
     ams_id: str = ""
     humidity: str = ""
+    humidity_raw: int = 0
     temp: float = 0.0
     trays: list[AMSTray] = field(default_factory=list)
 
@@ -130,6 +131,7 @@ def _parse_ams(data: dict) -> list[AMSInfo]:
         info = AMSInfo(
             ams_id=str(ams_unit.get("id", "")),
             humidity=str(ams_unit.get("humidity", "")),
+            humidity_raw=int(ams_unit.get("humidity_raw", 0)),
             temp=float(ams_unit.get("temp", 0) or 0),
         )
         for tray in ams_unit.get("tray", []):

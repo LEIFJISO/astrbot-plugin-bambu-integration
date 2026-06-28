@@ -72,6 +72,15 @@ class BambuMQTTClient:
             return True
         return False
 
+    def request_version(self, serial: str):
+        if self._connected and self._client:
+            self._client.publish(
+                f"device/{serial}/request",
+                json.dumps({"info": {"sequence_id": "0", "command": "get_version"}})
+            )
+            return True
+        return False
+
     async def start(self):
         self._running = True
         self._loop = asyncio.get_running_loop()

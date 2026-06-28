@@ -28,7 +28,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.3")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.4")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -120,6 +120,9 @@ class BambuPlugin(Star):
                 if state.gcode_state == "RUNNING":
                     if self._mqtt.request_pushall(serial):
                         logger.debug(f"主动请求 PUSH_ALL: {serial[:12]}")
+                if not state.model or state.model == "未知":
+                    if self._mqtt.request_version(serial):
+                        logger.debug(f"主动请求 GET_VERSION: {serial[:12]}")
 
     # ========== tools ==========
 
@@ -257,7 +260,7 @@ class BambuPlugin(Star):
             if state.mc_remaining_time > 0:
                 lines.append(f"  剩余 {state.mc_remaining_time // 60} 分钟")
             if state.total_layer_num > 0:
-                lines.append(f"  层数 {state.layer_num}/{state.total_layer_num}")
+                lines.append(f"  层数 {state.layer_num}/{state.total_layer_num} ({state.layer_num / state.total_layer_num * 100:.1f}%)")
         lines.append(f"  喷嘴 {state.nozzle_temper:.0f}C / 热床 {state.bed_temper:.0f}C")
         if state.chamber_temper > 0:
             lines.append(f"  腔体 {state.chamber_temper:.0f}C")
@@ -287,6 +290,8 @@ class BambuPlugin(Star):
         if state.gcode_state == "RUNNING":
             lines.append(f"进度: {state.mc_percent}%")
             lines.append(f"层数: {state.layer_num}/{state.total_layer_num}")
+            if state.total_layer_num > 0 and state.layer_num > 0:
+                lines.append(f"  层进度: {state.layer_num / state.total_layer_num * 100:.1f}%")
             if state.mc_remaining_time > 0:
                 lines.append(f"剩余: {state.mc_remaining_time // 60} 分钟")
         if state.gcode_file:
@@ -311,7 +316,13 @@ class BambuPlugin(Star):
         if state.ams:
             lines.append("")
             for ams in state.ams:
-                lines.append(f"AMS {ams.ams_id}: {ams.humidity} {ams.temp}C")
+                hum_str = ""
+                if ams.humidity_raw > 0:
+                    hum_str = f" {ams.humidity_raw}%"
+                elif ams.humidity.isdigit() and 1 <= int(ams.humidity) <= 5:
+                    labels = {1: "极干", 2: "干燥", 3: "正常", 4: "潮湿", 5: "极湿"}
+                    hum_str = f" {labels.get(int(ams.humidity), '?')}({ams.humidity}/5)"
+                lines.append(f"AMS {ams.ams_id}: 湿度:{hum_str} 温度: {ams.temp}C")
                 for tray in ams.trays:
                     if tray.empty:
                         lines.append(f"  槽{tray.tray_id}: 空")
