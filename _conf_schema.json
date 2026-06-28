@@ -53,6 +53,12 @@
         "type": "int",
         "default": 90,
         "hint": "进度、耗材、降温等非紧急事件在此时间内合并后一起推送。0 表示实时发送"
+      },
+      "debug_log": {
+        "description": "调试日志",
+        "type": "bool",
+        "default": false,
+        "hint": "开启后输出详细的 MQTT 消息流和推送链路日志"
       }
     }
   },

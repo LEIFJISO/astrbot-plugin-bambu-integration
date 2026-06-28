@@ -28,7 +28,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.3.3")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.0")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -70,6 +70,12 @@ class BambuPlugin(Star):
             f"notify={self._config.get('notify', {}).get('session_id', '未配置')[:30]}"
         )
         asyncio.create_task(self._periodic_save())
+        asyncio.create_task(self._periodic_pushall())
+        if self._config.get("monitor", {}).get("debug_log", False):
+            import logging
+            for name in ("mqtt_client", "printer_manager", "alert_engine"):
+                logging.getLogger(f"astrbot_plugin_bambu_integration.{name}").setLevel(logging.DEBUG)
+            logger.info("调试日志已启用")
         if token and not self._tools_registered and self._config.get("push", {}).get("enable_llm_tools", True):
             await self._register_tools()
         if token and self._config.get("monitor", {}).get("enabled", True):
@@ -104,6 +110,16 @@ class BambuPlugin(Star):
         while True:
             await asyncio.sleep(300)
             self._save_state()
+
+    async def _periodic_pushall(self):
+        while True:
+            await asyncio.sleep(60)
+            if not self._mqtt or not self._mqtt.connected:
+                continue
+            for serial, state in self._manager.get_states().items():
+                if state.gcode_state == "RUNNING":
+                    if self._mqtt.request_pushall(serial):
+                        logger.debug(f"主动请求 PUSH_ALL: {serial[:12]}")
 
     # ========== tools ==========
 
@@ -535,7 +551,7 @@ class BambuPlugin(Star):
         results.append("  Step 4 (FINISH+bed35): 入队生成 ✓")
 
         # Force flush
-        self._alert_engine._flash._flush(serial)
+        await self._alert_engine._flash._flush(serial)
         await asyncio.sleep(0.5)
         results.append("\n  强制 flush 完成，请查看通知窗口")
 

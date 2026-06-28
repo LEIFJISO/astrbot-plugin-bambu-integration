@@ -63,6 +63,15 @@ class BambuMQTTClient:
     def set_recovery_callback(self, callback: Callable):
         self._on_recovery = callback
 
+    def request_pushall(self, serial: str):
+        if self._connected and self._client:
+            self._client.publish(
+                f"device/{serial}/request",
+                json.dumps({"pushing": {"sequence_id": "0", "command": "pushall"}})
+            )
+            return True
+        return False
+
     async def start(self):
         self._running = True
         self._loop = asyncio.get_running_loop()
@@ -115,7 +124,7 @@ class BambuMQTTClient:
                 topic = f"device/{serial}/report"
                 client.subscribe(topic)
                 logger.info(f"  已订阅 {topic}，已发送 PUSH_ALL + GET_VERSION")
-                client.publish(f"device/{serial}/request", json.dumps({"pushing": {"sequence_id": "0", "command": "pushall"}}))
+                self.request_pushall(serial)
                 client.publish(f"device/{serial}/request", json.dumps({"info": {"sequence_id": "0", "command": "get_version"}}))
                 self._cancel_offline_timer(serial)
         else:
@@ -133,7 +142,7 @@ class BambuMQTTClient:
             self._loop.call_soon_threadsafe(
                 self._queue.put_nowait, (message.topic, message.payload)
             )
-            logger.info(f"[MQTT] enqueued: topic={message.topic} size={len(message.payload)}")
+            logger.debug(f"[MQTT] enqueued: topic={message.topic} size={len(message.payload)}")
 
     async def _consume(self):
         while self._running:
