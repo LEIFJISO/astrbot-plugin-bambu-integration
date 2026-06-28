@@ -32,6 +32,8 @@ class AMSTray:
     tray_sub_brands: str = ""
     tray_color: str = ""
     tray_weight: str = ""
+    empty: bool = False
+    cols: list = field(default_factory=list)
 
 
 @dataclass
@@ -131,13 +133,25 @@ def _parse_ams(data: dict) -> list[AMSInfo]:
             temp=float(ams_unit.get("temp", 0) or 0),
         )
         for tray in ams_unit.get("tray", []):
+            tag_uid = str(tray.get("tag_uid", ""))
+            tray_type = str(tray.get("tray_type", ""))
+            is_empty = (not tag_uid or tag_uid == "0000000000000000") and not tray_type
+
+            cols = tray.get("cols", [])
+            if isinstance(cols, list) and cols:
+                color = str(cols[0])
+            else:
+                color = str(tray.get("tray_color", ""))
+
             info.trays.append(AMSTray(
                 tray_id=str(tray.get("id", "")),
-                remain=int(tray.get("remain", 0)),
-                tray_type=str(tray.get("tray_type", "")),
+                remain=int(tray.get("remain", 0)) if not is_empty else 0,
+                tray_type=tray_type,
                 tray_sub_brands=str(tray.get("tray_sub_brands", "")),
-                tray_color=str(tray.get("tray_color", "")),
+                tray_color=color,
                 tray_weight=str(tray.get("tray_weight", "")),
+                empty=is_empty,
+                cols=cols if isinstance(cols, list) else [],
             ))
         result.append(info)
     return result
@@ -146,7 +160,7 @@ def _parse_ams(data: dict) -> list[AMSInfo]:
 def _lowest_remain(ams_list: list[AMSInfo]) -> float:
     if not ams_list:
         return 100.0
-    remains = [t.remain for a in ams_list for t in a.trays]
+    remains = [t.remain for a in ams_list for t in a.trays if not t.empty]
     return float(min(remains)) if remains else 100.0
 
 

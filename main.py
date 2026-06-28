@@ -28,7 +28,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.2")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.3")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -313,9 +313,17 @@ class BambuPlugin(Star):
             for ams in state.ams:
                 lines.append(f"AMS {ams.ams_id}: {ams.humidity} {ams.temp}C")
                 for tray in ams.trays:
-                    material = tray.tray_sub_brands or tray.tray_type or "未知"
-                    bar = "#" * (tray.remain // 10) + "-" * (10 - tray.remain // 10)
-                    lines.append(f"  槽{tray.tray_id}: {material} {tray.remain}% {bar}")
+                    if tray.empty:
+                        lines.append(f"  槽{tray.tray_id}: 空")
+                    else:
+                        material = tray.tray_sub_brands or tray.tray_type or "未知"
+                        color_str = ""
+                        if tray.tray_color and tray.tray_color not in ("FFFFFFFF", ""):
+                            color_str = f" #{tray.tray_color[:6]}"
+                        elif tray.tray_color == "FFFFFFFF":
+                            color_str = " (白)"
+                        bar = "#" * (tray.remain // 10) + "-" * (10 - tray.remain // 10)
+                        lines.append(f"  槽{tray.tray_id}: {material} {tray.remain}%{color_str} {bar}")
         if state.ams_lowest_remain < 100:
             lines.append(f"最低余量: {state.ams_lowest_remain}%")
         if state.print_error:
