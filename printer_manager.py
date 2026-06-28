@@ -164,6 +164,7 @@ class PrinterManager:
         self._states: dict[str, PrinterState] = {}
         self._initialized: dict[str, bool] = {}
         self._models: dict[str, str] = {}
+        self._is_h2d: dict[str, bool] = {}
         self._on_state_change: Optional[Callable] = None
 
     def set_callback(self, callback: Callable):
@@ -190,8 +191,13 @@ class PrinterManager:
         is_incremental = msg != 0
         old_state = self._states.get(serial)
 
+        # 机型检测：首次从全量 pushall 中检测，之后记住
         is_h2d = _is_h2d_model(data)
-        logger.debug(f"[State] serial={serial[:12]} msg={msg} incr={is_incremental} h2d={is_h2d}")
+        if is_h2d:
+            self._is_h2d[serial] = True
+        elif self._is_h2d.get(serial, False):
+            is_h2d = True
+        logger.debug(f"[State] serial={serial[:12]} msg={msg} incr={is_incremental} h2d={is_h2d}(stored={self._is_h2d.get(serial, False)})")
 
         if is_h2d:
             nozzle_current, nozzle_target, bed_current, bed_target = _parse_temperature_h2d(data)

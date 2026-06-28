@@ -28,7 +28,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.1")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.2")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -554,6 +554,11 @@ class BambuPlugin(Star):
         await self._alert_engine._flash._flush(serial)
         await asyncio.sleep(0.5)
         results.append("\n  强制 flush 完成，请查看通知窗口")
+
+        # 请求一次 PUSH_ALL 恢复真实状态
+        if self._mqtt:
+            self._mqtt.request_pushall(serial)
+            results.append("  已请求 PUSH_ALL 恢复真实状态")
 
         yield event.plain_result("\n".join(results))
 
