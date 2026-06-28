@@ -338,7 +338,7 @@ class AlertEngine:
 
         if filtered:
             types = [e.event_type for e in filtered]
-            logger.debug(f"[Alert] serial={serial[:12]} events={types}")
+            logger.info(f"[Alert] serial={serial[:12]} events={types}")
         self._flash.process(serial, filtered)
 
     def _evaluate_custom_rules(self, old: PrinterState, new: PrinterState, rules: list) -> list[AlertEvent]:
@@ -510,12 +510,12 @@ class AlertEngine:
             self._silent_events.setdefault(event.serial, []).append(
                 f"[{time.strftime('%H:%M')}] {event.message}"
             )
-            logger.debug(f"[Dispatch] serial={event.serial[:12]} type={event.event_type} MUTED")
+            logger.info(f"[Dispatch] serial={event.serial[:12]} type={event.event_type} MUTED")
             return
 
         push_config = self._config.get("push", {})
         mode = push_config.get("mode", "native")
-        logger.debug(f"[Dispatch] serial={event.serial[:12]} type={event.event_type} mode={mode} native={bool(self._on_native)} ai={bool(self._on_ai)}")
+        logger.info(f"[Dispatch] serial={event.serial[:12]} type={event.event_type} mode={mode} native={bool(self._on_native)} ai={bool(self._on_ai)}")
 
         if mode in ("native", "both"):
             native_msg = _build_native_message(event)
@@ -565,7 +565,7 @@ class FlashQueue:
 
         queued_types = list(queue["events"].keys())
         delay = 30 if EVENT_COMPLETE in queue["events"] else self._engine._config.get("monitor", {}).get("alert_delay", 90)
-        logger.debug(f"[Flash] serial={serial[:12]} queued={queued_types} delay={delay}s")
+        logger.info(f"[Flash] serial={serial[:12]} queued={queued_types} delay={delay}s")
 
         self._reschedule(serial)
 
@@ -588,7 +588,7 @@ class FlashQueue:
     async def _flush(self, serial: str):
         queue = self._queues.pop(serial, {})
         events_dict = queue.get("events", {})
-        logger.debug(f"[Flash] flushing {len(events_dict)} events for {serial[:12]}: {list(events_dict.keys())}")
+        logger.info(f"[Flash] flushing {len(events_dict)} events for {serial[:12]}: {list(events_dict.keys())}")
         for event in events_dict.values():
             self._engine.dispatch(event)
         self._timers.pop(serial, None)

@@ -28,7 +28,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.3.0")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.3.1")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -46,13 +46,30 @@ class BambuPlugin(Star):
         self._alert_engine.set_ai_callback(self._on_ai_push)
         self._manager.set_callback(self._alert_engine.on_state_change)
 
+        # 模块自检
+        import printer_manager as _pm
+        _pm_mtime = os.path.getmtime(_pm.__file__) if _pm.__file__ else 0
+        import time as _time
+        logger.info(
+            f"插件已加载 v1.3.1 | "
+            f"printer_manager 修改时间: {_time.strftime('%H:%M:%S', _time.localtime(_pm_mtime))} | "
+            f"callback={'已设置' if self._manager._on_state_change else '未设置'} | "
+            f"notify_targets={'已配置' if config.get('notify', {}).get('session_id') else '未配置'}"
+        )
+
     # ========== lifecycle ==========
 
     async def initialize(self):
         self._state_path = os.path.join("data", "bambu_state.json")
         self._load_state()
-        asyncio.create_task(self._periodic_save())
         token = self._config.get("cloud", {}).get("access_token", "")
+        logger.info(
+            f"插件初始化 | token={'已配置' if token else '未配置'} | "
+            f"monitor={'启用' if self._config.get('monitor', {}).get('enabled', True) else '禁用'} | "
+            f"llm_tools={'启用' if self._config.get('push', {}).get('enable_llm_tools', True) else '禁用'} | "
+            f"notify={self._config.get('notify', {}).get('session_id', '未配置')[:30]}"
+        )
+        asyncio.create_task(self._periodic_save())
         if token and not self._tools_registered and self._config.get("push", {}).get("enable_llm_tools", True):
             await self._register_tools()
         if token and self._config.get("monitor", {}).get("enabled", True):
@@ -128,13 +145,14 @@ class BambuPlugin(Star):
         self._mqtt.set_recovery_callback(lambda s: logger.info(f"打印机 {s} 恢复连接"))
 
         bindings = await fetch_bindings(region, token)
+        serials = []
         if bindings.get("ok"):
-            serials = []
             for p in bindings["printers"]:
                 serials.append(p["serial"])
                 self._manager.set_model(p["serial"], p["model"], p["name"])
             self._mqtt.set_serials(serials)
 
+        logger.info(f"MQTT 凭据就绪 | username={username} | printers={len(serials)} | serials={[s[:12] for s in serials]}")
         self._mqtt_task = asyncio.create_task(self._mqtt.start())
 
     async def _stop_mqtt(self):
@@ -443,6 +461,7 @@ class BambuPlugin(Star):
         push_mode = self._config.get("push", {}).get("mode", "native")
 
         lines = [
+            f"版本：v1.3.1",
             f"登录状态：{'已登录' if token else '未登录'}",
             f"账号：{cloud.get('account', '未设置')}",
             f"区域：{cloud.get('region', 'cn')}",
@@ -456,6 +475,71 @@ class BambuPlugin(Star):
             f"监控打印机：{printer_count} 台",
         ])
         yield event.plain_result("\n".join(lines))
+
+    @bambu.command("test")
+    async def cmd_test(self, event: AstrMessageEvent):
+        msg = event.message_str.strip()
+        args = ""
+        for prefix in ("/bambu test", "bambu test", "test"):
+            if msg.startswith(prefix):
+                args = msg[len(prefix):].strip()
+                break
+        if args != "push":
+            yield event.plain_result("用法：/bambu test push")
+            return
+
+        states = self._manager.get_states()
+        if not states:
+            yield event.plain_result("未发现打印机，请先登录")
+            return
+
+        serial = next(iter(states.keys()))
+        name = states[serial].name or states[serial].model or serial
+        results = [f"[测试推送] 打印机: {name}"]
+
+        # Step 1: IDLE baseline
+        self._manager.update_from_pushall(serial, {
+            "msg": 0, "gcode_state": "IDLE", "mc_percent": 0,
+            "nozzle_temper": 30.0, "nozzle_target_temper": 0,
+            "bed_temper": 30.0, "bed_target_temper": 0,
+        })
+        await asyncio.sleep(0.3)
+        results.append("  Step 1 (IDLE): 基线设置 ✓")
+
+        # Step 2: RUNNING 50%
+        self._manager.update_from_pushall(serial, {
+            "msg": 0, "gcode_state": "RUNNING", "mc_percent": 50,
+            "nozzle_temper": 210.0, "nozzle_target_temper": 210.0,
+            "bed_temper": 55.0, "bed_target_temper": 55.0,
+            "mc_remaining_time": 1800, "layer_num": 50, "total_layer_num": 100,
+        })
+        await asyncio.sleep(0.3)
+        results.append("  Step 2 (RUNNING 50%): 入队生成 ✓")
+
+        # Step 3: FINISH
+        self._manager.update_from_pushall(serial, {
+            "msg": 0, "gcode_state": "FINISH", "mc_percent": 100,
+            "nozzle_temper": 30.0, "nozzle_target_temper": 0,
+            "bed_temper": 55.0, "bed_target_temper": 0,
+        })
+        await asyncio.sleep(0.3)
+        results.append("  Step 3 (FINISH): 入队生成 ✓")
+
+        # Step 4: FINISH + cooled bed
+        self._manager.update_from_pushall(serial, {
+            "msg": 0, "gcode_state": "FINISH", "mc_percent": 100,
+            "nozzle_temper": 30.0, "nozzle_target_temper": 0,
+            "bed_temper": 35.0, "bed_target_temper": 0,
+        })
+        await asyncio.sleep(0.3)
+        results.append("  Step 4 (FINISH+bed35): 入队生成 ✓")
+
+        # Force flush
+        self._alert_engine._flash._flush(serial)
+        await asyncio.sleep(0.5)
+        results.append("\n  强制 flush 完成，请查看通知窗口")
+
+        yield event.plain_result("\n".join(results))
 
     @bambu.command("printers")
     async def cmd_printers(self, event: AstrMessageEvent):
