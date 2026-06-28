@@ -114,10 +114,9 @@ class BambuMQTTClient:
             for serial in self._serials:
                 topic = f"device/{serial}/report"
                 client.subscribe(topic)
-                payload = json.dumps({"pushing": {"sequence_id": "0", "command": "pushall"}})
-                client.publish(f"device/{serial}/request", payload)
-                payload = json.dumps({"info": {"sequence_id": "0", "command": "get_version"}})
-                client.publish(f"device/{serial}/request", payload)
+                logger.info(f"  已订阅 {topic}，已发送 PUSH_ALL + GET_VERSION")
+                client.publish(f"device/{serial}/request", json.dumps({"pushing": {"sequence_id": "0", "command": "pushall"}}))
+                client.publish(f"device/{serial}/request", json.dumps({"info": {"sequence_id": "0", "command": "get_version"}}))
                 self._cancel_offline_timer(serial)
         else:
             self._last_error = f"RC={rc_value}"
@@ -172,7 +171,11 @@ class BambuMQTTClient:
 
         if "print" in data:
             p = data["print"]
-            logger.info(f"[MQTT] serial={serial} print msg={p.get('msg',0)} state={p.get('gcode_state','?')} mc={p.get('mc_percent',0)}%")
+            msg_type = p.get("msg", 0)
+            if msg_type == 0:
+                logger.info(f"[MQTT] serial={serial} print msg=0 state={p.get('gcode_state','?')} mc={p.get('mc_percent',0)}%")
+            else:
+                logger.debug(f"[MQTT] serial={serial} print msg={msg_type} size={len(payload)}")
             self._manager.update_from_pushall(serial, data["print"])
         elif "info" in data and data["info"].get("command") == "get_version":
             self._manager.update_firmware_info(serial, data["info"])
