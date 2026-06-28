@@ -6,14 +6,12 @@ import ssl
 import json
 import uuid
 import asyncio
-import logging
 from typing import Callable, Optional
 
 import paho.mqtt.client as mqtt
 
 from printer_manager import PrinterManager
-
-logger = logging.getLogger(__name__)
+from astrbot.api import logger
 
 
 def _mqtt_host(region: str) -> str:

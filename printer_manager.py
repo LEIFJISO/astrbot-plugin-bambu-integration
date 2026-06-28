@@ -1,8 +1,11 @@
-import logging
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from dataclasses import dataclass, field
 from typing import Optional, Callable, Any
 
-logger = logging.getLogger(__name__)
+from astrbot.api import logger
 
 STATE_IDLE = "IDLE"
 STATE_RUNNING = "RUNNING"

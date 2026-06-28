@@ -1,6 +1,6 @@
 name: astrbot_plugin_bambu_integration
 display_name: 拓竹打印机
 desc: 拓竹 3D 打印机集成插件，支持实时状态监控、智能提醒推送与 LLM 交互查询
-version: v1.3.1
+version: v1.3.2
 author: LiuEnder
 repo: https://github.com/LiuEnder/astrbot-plugin-bambu-integration

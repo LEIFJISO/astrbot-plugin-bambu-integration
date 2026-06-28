@@ -5,16 +5,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import re
 import time
 import asyncio
-import logging
 from dataclasses import dataclass, field
 from typing import Optional, Callable, Any
+
+from astrbot.api import logger
 
 from printer_manager import (
     PrinterState, STATE_IDLE, STATE_RUNNING, STATE_PAUSE,
     STATE_PREPARE, STATE_FINISH, STATE_FAILED,
 )
-
-logger = logging.getLogger(__name__)
 
 EVENT_COMPLETE = "complete"
 EVENT_ERROR = "error"
