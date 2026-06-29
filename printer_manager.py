@@ -325,7 +325,7 @@ class PrinterManager:
         modules = info_data.get("module", [])
         for mod in modules:
             if mod.get("name") == "ota":
-                model = mod.get("project_name", "")
+                model = mod.get("project_name", "") or mod.get("product_name", "")
                 sw_ver = mod.get("sw_ver", "")
                 if not model:
                     logger.warning(f"[FW] {serial[:12]} project_name is None/empty in get_version response: {mod}")
