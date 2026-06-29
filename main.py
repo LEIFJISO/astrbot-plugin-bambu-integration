@@ -28,7 +28,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.5")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.6")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -332,9 +332,12 @@ class BambuPlugin(Star):
         lines.append(f"  热床: {state.bed_temper:.1f} -> {state.bed_target_temper:.0f}C")
         if state.chamber_temper > 0:
             lines.append(f"  腔体: {state.chamber_temper:.1f}C")
+        cf = int(state.cooling_fan_speed) * 100 // 15 if state.cooling_fan_speed.isdigit() else 0
+        hf = int(state.heatbreak_fan_speed) * 100 // 15 if state.heatbreak_fan_speed.isdigit() else 0
+        af = int(state.big_fan1_speed) * 100 // 15 if state.big_fan1_speed.isdigit() else 0
         lines.extend([
             "",
-            f"风扇: 冷却{state.cooling_fan_speed} 散热{state.heatbreak_fan_speed} 辅助{state.big_fan1_speed}",
+            f"风扇: 冷却{cf}% 散热{hf}% 辅助{af}%",
         ])
         if state.spd_lvl > 0:
             speed_names = {1: "静音", 2: "标准", 3: "运动", 4: "狂暴"}
@@ -368,7 +371,8 @@ class BambuPlugin(Star):
         if state.print_error:
             lines.append(f"错误码: {state.print_error}")
         if state.hms:
-            lines.append(f"HMS: {state.hms}")
+            codes = [str(h.get("code", h)) for h in state.hms if isinstance(h, dict)]
+            lines.append(f"HMS: {', '.join(codes[:5])}")
         if not state.online:
             lines.append("离线")
         return "\n".join(lines)
@@ -522,9 +526,11 @@ class BambuPlugin(Star):
         last_error = self._mqtt.last_error if self._mqtt else ""
         printer_count = len(self._manager.get_states())
         push_mode = self._config.get("push", {}).get("mode", "native")
+        c = self._alert_engine.get_counters()
+        maintenance_count = len(self._config.get("maintenance_tasks", []))
 
         lines = [
-            f"版本：v1.4.1",
+            f"版本：v1.4.6",
             f"登录状态：{'已登录' if token else '未登录'}",
             f"账号：{cloud.get('account', '未设置')}",
             f"区域：{cloud.get('region', 'cn')}",
@@ -536,8 +542,24 @@ class BambuPlugin(Star):
             f"推送模式：{push_mode}",
             f"LLM 工具：{'已注册' if self._tools_registered else '未注册'}",
             f"监控打印机：{printer_count} 台",
+            f"维护任务：{maintenance_count} 条",
+            f"累计打印：{c['print_hours']:.1f}h | 完成：{int(c['completion_count'])}次 | 连续失败：{int(c['failure_consecutive'])}次",
         ])
         yield event.plain_result("\n".join(lines))
+
+    @bambu.command("refresh")
+    async def cmd_refresh(self, event: AstrMessageEvent):
+        if not self._mqtt or not self._mqtt.connected:
+            yield event.plain_result("MQTT 未连接")
+            return
+        states = self._manager.get_states()
+        if not states:
+            yield event.plain_result("未发现打印机")
+            return
+        for serial in states:
+            self._mqtt.request_pushall(serial)
+            self._mqtt.request_version(serial)
+        yield event.plain_result(f"已向 {len(states)} 台打印机发送 PUSH_ALL + GET_VERSION")
 
     @bambu.command("test")
     async def cmd_test(self, event: AstrMessageEvent):
