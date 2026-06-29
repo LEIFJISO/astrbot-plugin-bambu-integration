@@ -28,7 +28,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.12")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.13")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -139,6 +139,7 @@ class BambuPlugin(Star):
             {"__template_key": "task", "name": "线缆检查", "enabled": True, "type": "hours", "interval": 500, "message": "累计打印{print_hours}h，建议检查各线缆绝缘皮和接头", "mute": ""},
             {"__template_key": "task", "name": "碳滤芯更换", "enabled": True, "type": "hours", "interval": 600, "message": "累计打印{print_hours}h，建议更换活性炭滤芯", "mute": ""},
             {"__template_key": "task", "name": "全面检查", "enabled": True, "type": "hours", "interval": 700, "message": "累计打印{print_hours}h，建议全面检查：硅胶套、喉管积碳、滑轮异响、线缆破损等", "mute": ""},
+            {"__template_key": "task", "name": "全面校准", "enabled": True, "type": "hours", "interval": 500, "message": "累计打印{print_hours}h，建议执行全面校准：电机降噪、振动补偿、自动热床调平", "mute": ""},
             {"__template_key": "task", "name": "打印板涂胶", "enabled": True, "type": "completions", "interval": 5, "message": "已完成{completion_count}次打印，建议涂胶", "mute": ""},
             {"__template_key": "task", "name": "擦嘴硅胶检查", "enabled": True, "type": "completions", "interval": 30, "message": "已完成{completion_count}次打印，建议检查擦嘴硅胶", "mute": ""},
         ]
