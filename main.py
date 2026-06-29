@@ -28,7 +28,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.10")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.11")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -279,7 +279,7 @@ class BambuPlugin(Star):
         if state.gcode_state == "RUNNING":
             lines.append(f"  进度 {state.mc_percent}%")
             if state.mc_remaining_time > 0:
-                lines.append(f"  剩余 {self._format_remaining(state.mc_remaining_time)}")
+                lines.append(f"  剩余 {self._format_remaining(state.mc_remaining_time, state)}")
             if state.total_layer_num > 0:
                 lines.append(f"  层数 {state.layer_num}/{state.total_layer_num} ({state.layer_num / state.total_layer_num * 100:.1f}%)")
         if state.is_dual_nozzle:
@@ -296,14 +296,13 @@ class BambuPlugin(Star):
             lines.append("  离线")
         return "\n".join(lines)
 
-    @staticmethod
-    def _format_remaining(raw: int) -> str:
+    def _format_remaining(self, raw: int, state: PrinterState) -> str:
         if raw <= 0:
             return "0 分钟"
-        if raw >= 600:
-            mins = raw // 60
-        else:
+        if state.is_dual_nozzle:
             mins = raw
+        else:
+            mins = raw // 60
         if mins >= 60:
             return f"{mins // 60}h{mins % 60}min"
         return f"{mins} 分钟"
@@ -329,7 +328,7 @@ class BambuPlugin(Star):
             if state.total_layer_num > 0 and state.layer_num > 0:
                 lines.append(f"  层进度: {state.layer_num / state.total_layer_num * 100:.1f}%")
             if state.mc_remaining_time > 0:
-                lines.append(f"剩余: {self._format_remaining(state.mc_remaining_time)}")
+                lines.append(f"剩余: {self._format_remaining(state.mc_remaining_time, state)}")
         if state.gcode_file:
             lines.append(f"文件: {state.gcode_file}")
         lines.extend([
