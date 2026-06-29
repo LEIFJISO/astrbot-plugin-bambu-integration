@@ -55,6 +55,9 @@ class PrinterState:
     mc_remaining_time: int = 0
     nozzle_temper: float = 0.0
     nozzle_target_temper: float = 0.0
+    nozzle_temper_left: float = 0.0
+    nozzle_target_left: float = 0.0
+    is_dual_nozzle: bool = False
     bed_temper: float = 0.0
     bed_target_temper: float = 0.0
     chamber_temper: float = 0.0
@@ -115,6 +118,21 @@ def _parse_temperature_h2d(data: dict) -> tuple[float, float, float, float]:
         bed_target = float(data.get("bed_target_temper", 0) or 0)
 
     return nozzle_current, nozzle_target, bed_current, bed_target
+
+
+def _parse_dual_nozzle(data: dict) -> tuple[float, float, bool]:
+    extruder_info = data.get("device", {}).get("extruder", {}).get("info", [])
+    if len(extruder_info) < 2:
+        return 0.0, 0.0, False
+    extruder_state = data.get("device", {}).get("extruder", {}).get("state", 0)
+    active_idx = (extruder_state >> 4) & 0xF
+    left_idx = 1 if active_idx == 0 else 0
+
+    left_raw = extruder_info[left_idx].get("temp", 0) if left_idx < len(extruder_info) else 0
+    left_current = float(left_raw & 0xFFFF)
+    left_target = float((left_raw >> 16) & 0xFFFF)
+
+    return left_current, left_target, True
 
 
 def _parse_ams(data: dict) -> list[AMSInfo]:
@@ -217,8 +235,10 @@ class PrinterManager:
 
         if is_h2d:
             nozzle_current, nozzle_target, bed_current, bed_target = _parse_temperature_h2d(data)
+            left_current, left_target, is_dual = _parse_dual_nozzle(data)
         else:
             nozzle_current, nozzle_target, bed_current, bed_target = _parse_temperature_standard(data)
+            left_current, left_target, is_dual = 0.0, 0.0, False
 
         ams_list = _parse_ams(data)
 
@@ -231,6 +251,9 @@ class PrinterManager:
             mc_remaining_time=int(data.get("mc_remaining_time", 0)),
             nozzle_temper=nozzle_current,
             nozzle_target_temper=nozzle_target,
+            nozzle_temper_left=left_current,
+            nozzle_target_left=left_target,
+            is_dual_nozzle=is_dual,
             bed_temper=bed_current,
             bed_target_temper=bed_target,
             chamber_temper=float(data.get("chamber_temper", 0) or 0),
@@ -305,7 +328,7 @@ class PrinterManager:
                 self._models[serial] = mod.get("project_name", "")
                 if serial in self._states:
                     self._states[serial].model = mod.get("project_name", "")
-                self._states[serial].firmware_version = mod.get("sw_ver", "")
+                    self._states[serial].firmware_version = mod.get("sw_ver", "")
                 break
 
     def mark_offline(self, serial: str):

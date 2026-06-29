@@ -28,7 +28,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.4")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.5")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -62,6 +62,7 @@ class BambuPlugin(Star):
     async def initialize(self):
         self._state_path = os.path.join("data", "bambu_state.json")
         self._load_state()
+        self._seed_defaults()
         token = self._config.get("cloud", {}).get("access_token", "")
         logger.info(
             f"插件初始化 | token={'已配置' if token else '未配置'} | "
@@ -123,6 +124,26 @@ class BambuPlugin(Star):
                 if not state.model or state.model == "未知":
                     if self._mqtt.request_version(serial):
                         logger.debug(f"主动请求 GET_VERSION: {serial[:12]}")
+
+    def _seed_defaults(self):
+        if self._config.get("maintenance_tasks"):
+            return
+        self._config["maintenance_tasks"] = [
+            {"__template_key": "task", "name": "工具头切刀检查", "enabled": True, "type": "hours", "interval": 80, "message": "累计打印{print_hours}h，建议检查切刀锋利度", "mute": ""},
+            {"__template_key": "task", "name": "打印板清洁", "enabled": True, "type": "hours", "interval": 100, "message": "累计打印{print_hours}h，建议清洁打印板", "mute": ""},
+            {"__template_key": "task", "name": "XY轴光轴润滑", "enabled": True, "type": "hours", "interval": 150, "message": "累计打印{print_hours}h，建议润滑XY轴光轴", "mute": ""},
+            {"__template_key": "task", "name": "同步皮带检查", "enabled": True, "type": "hours", "interval": 200, "message": "累计打印{print_hours}h，建议检查皮带张紧度和齿面", "mute": ""},
+            {"__template_key": "task", "name": "主挤出机清洁", "enabled": True, "type": "hours", "interval": 250, "message": "累计打印{print_hours}h，建议清洁挤出机并润滑齿轮", "mute": ""},
+            {"__template_key": "task", "name": "喷嘴检查", "enabled": True, "type": "hours", "interval": 300, "message": "累计打印{print_hours}h，建议检查喷嘴磨损和挤出不均", "mute": ""},
+            {"__template_key": "task", "name": "Z轴丝杆润滑", "enabled": True, "type": "hours", "interval": 450, "message": "累计打印{print_hours}h，建议润滑Z轴丝杆", "mute": ""},
+            {"__template_key": "task", "name": "线缆检查", "enabled": True, "type": "hours", "interval": 500, "message": "累计打印{print_hours}h，建议检查各线缆绝缘皮和接头", "mute": ""},
+            {"__template_key": "task", "name": "碳滤芯更换", "enabled": True, "type": "hours", "interval": 600, "message": "累计打印{print_hours}h，建议更换活性炭滤芯", "mute": ""},
+            {"__template_key": "task", "name": "全面检查", "enabled": True, "type": "hours", "interval": 700, "message": "累计打印{print_hours}h，建议全面检查：硅胶套、喉管积碳、滑轮异响、线缆破损等", "mute": ""},
+            {"__template_key": "task", "name": "打印板涂胶", "enabled": True, "type": "completions", "interval": 5, "message": "已完成{completion_count}次打印，建议涂胶", "mute": ""},
+            {"__template_key": "task", "name": "擦嘴硅胶检查", "enabled": True, "type": "completions", "interval": 30, "message": "已完成{completion_count}次打印，建议检查擦嘴硅胶", "mute": ""},
+        ]
+        self._config.save_config()
+        logger.info("已填入 12 条默认维护任务")
 
     # ========== tools ==========
 
@@ -261,7 +282,10 @@ class BambuPlugin(Star):
                 lines.append(f"  剩余 {state.mc_remaining_time // 60} 分钟")
             if state.total_layer_num > 0:
                 lines.append(f"  层数 {state.layer_num}/{state.total_layer_num} ({state.layer_num / state.total_layer_num * 100:.1f}%)")
-        lines.append(f"  喷嘴 {state.nozzle_temper:.0f}C / 热床 {state.bed_temper:.0f}C")
+        if state.is_dual_nozzle:
+            lines.append(f"  喷嘴 右{state.nozzle_temper:.0f}C / 左{state.nozzle_temper_left:.0f}C 热床 {state.bed_temper:.0f}C")
+        else:
+            lines.append(f"  喷嘴 {state.nozzle_temper:.0f}C / 热床 {state.bed_temper:.0f}C")
         if state.chamber_temper > 0:
             lines.append(f"  腔体 {state.chamber_temper:.0f}C")
         if state.ams_lowest_remain < 100:
@@ -299,9 +323,13 @@ class BambuPlugin(Star):
         lines.extend([
             "",
             "温度:",
-            f"  喷嘴: {state.nozzle_temper:.1f} -> {state.nozzle_target_temper:.0f}C",
-            f"  热床: {state.bed_temper:.1f} -> {state.bed_target_temper:.0f}C",
         ])
+        if state.is_dual_nozzle:
+            lines.append(f"  右喷嘴: {state.nozzle_temper:.1f} -> {state.nozzle_target_temper:.0f}C")
+            lines.append(f"  左喷嘴: {state.nozzle_temper_left:.1f} -> {state.nozzle_target_left:.0f}C")
+        else:
+            lines.append(f"  喷嘴: {state.nozzle_temper:.1f} -> {state.nozzle_target_temper:.0f}C")
+        lines.append(f"  热床: {state.bed_temper:.1f} -> {state.bed_target_temper:.0f}C")
         if state.chamber_temper > 0:
             lines.append(f"  腔体: {state.chamber_temper:.1f}C")
         lines.extend([
