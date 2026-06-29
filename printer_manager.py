@@ -21,6 +21,7 @@ _INCREMENTAL_KEEP_KEYS = (
     "cooling_fan_speed", "heatbreak_fan_speed", "big_fan1_speed", "big_fan2_speed",
     "wifi_signal", "gcode_file", "task_id", "job_id", "subtask_name",
     "nozzle_diameter", "nozzle_type", "sdcard", "online", "name",
+    "firmware_version", "is_dual_nozzle", "nozzle_temper_left", "nozzle_target_left",
 )
 
 
@@ -281,6 +282,10 @@ class PrinterManager:
             lights_report=data.get("lights_report", []),
             raw=data,
         )
+
+        msg = data.get("msg", 0)
+        if msg == 0 and new_state.mc_remaining_time > 0:
+            logger.debug(f"[Time] serial={serial[:12]} mc_remaining_time_raw={new_state.mc_remaining_time} (h={new_state.mc_remaining_time/3600:.1f} m={new_state.mc_remaining_time/60:.0f})")
 
         if is_incremental and old_state:
             merged_keys = []
