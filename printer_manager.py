@@ -327,11 +327,13 @@ class PrinterManager:
             if mod.get("name") == "ota":
                 model = mod.get("project_name", "")
                 sw_ver = mod.get("sw_ver", "")
-                self._models[serial] = model
+                if not model:
+                    logger.warning(f"[FW] {serial[:12]} project_name is None/empty in get_version response: {mod}")
+                self._models[serial] = model or "未知"
                 if serial in self._states:
-                    self._states[serial].model = model
+                    self._states[serial].model = model or "未知"
                     self._states[serial].firmware_version = sw_ver
-                logger.debug(f"[FW] {serial[:12]} model={model} sw_ver={sw_ver}")
+                logger.info(f"[FW] {serial[:12]} model={model or '未知'} sw_ver={sw_ver}")
                 break
 
     def mark_offline(self, serial: str):

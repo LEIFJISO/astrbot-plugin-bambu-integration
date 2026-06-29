@@ -28,7 +28,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.6")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.7")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -556,10 +556,12 @@ class BambuPlugin(Star):
         if not states:
             yield event.plain_result("未发现打印机")
             return
+        results = []
         for serial in states:
-            self._mqtt.request_pushall(serial)
-            self._mqtt.request_version(serial)
-        yield event.plain_result(f"已向 {len(states)} 台打印机发送 PUSH_ALL + GET_VERSION")
+            ok1 = self._mqtt.request_pushall(serial)
+            ok2 = self._mqtt.request_version(serial)
+            results.append(f"  {serial[:12]}: PUSH_ALL={'OK' if ok1 else 'FAIL'}, GET_VERSION={'OK' if ok2 else 'FAIL'}")
+        yield event.plain_result(f"已向 {len(states)} 台打印机发送请求:\n" + "\n".join(results))
 
     @bambu.command("test")
     async def cmd_test(self, event: AstrMessageEvent):

@@ -196,7 +196,10 @@ class BambuMQTTClient:
                 logger.debug(f"[MQTT] serial={serial} print msg={msg_type} size={len(payload)}")
             self._manager.update_from_pushall(serial, data["print"])
         elif "info" in data and data["info"].get("command") == "get_version":
+            logger.info(f"[MQTT] {serial[:12]} get_version response: keys={list(data['info'].keys())}")
             self._manager.update_firmware_info(serial, data["info"])
+        elif "info" in data:
+            logger.info(f"[MQTT] {serial[:12]} info: command={data['info'].get('command','?')}")
 
     def _start_offline_timer(self, serial: str):
         self._cancel_offline_timer(serial)

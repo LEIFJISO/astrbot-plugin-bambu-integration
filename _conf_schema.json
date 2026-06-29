@@ -57,7 +57,7 @@
       "debug_log": {
         "description": "调试日志",
         "type": "bool",
-        "default": false,
+        "default": true,
         "hint": "开启后输出详细的 MQTT 消息流和推送链路日志"
       }
     }
