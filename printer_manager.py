@@ -129,14 +129,12 @@ def _parse_dual_nozzle(data: dict) -> tuple[float, float, bool]:
     extruder_info = data.get("device", {}).get("extruder", {}).get("info", [])
     if len(extruder_info) < 2:
         return 0.0, 0.0, False
-    extruder_state = data.get("device", {}).get("extruder", {}).get("state", 0)
-    active_idx = (extruder_state >> 4) & 0xF
-    left_idx = 1 if active_idx == 0 else 0
-
-    left_raw = extruder_info[left_idx].get("temp", 0) if left_idx < len(extruder_info) else 0
-    left_current = float(left_raw & 0xFFFF)
-    left_target = float((left_raw >> 16) & 0xFFFF)
-
+    left_data = next((e for e in extruder_info if e.get("id") == 1), None)
+    if not left_data:
+        return 0.0, 0.0, False
+    raw = left_data.get("temp", 0)
+    left_current = float(raw & 0xFFFF)
+    left_target = float((raw >> 16) & 0xFFFF)
     return left_current, left_target, True
 
 
