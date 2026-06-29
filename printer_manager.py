@@ -105,7 +105,11 @@ def _parse_temperature_h2d(data: dict) -> tuple[float, float, float, float]:
 
     extruder_info = data.get("device", {}).get("extruder", {}).get("info", [])
     if extruder_info:
-        raw = extruder_info[0].get("temp", 0)
+        extruder_state = data.get("device", {}).get("extruder", {}).get("state", 0)
+        active_idx = (extruder_state >> 4) & 0xF
+        if active_idx >= len(extruder_info):
+            active_idx = 0
+        raw = extruder_info[active_idx].get("temp", 0)
         nozzle_current = float(raw & 0xFFFF)
         nozzle_target = float((raw >> 16) & 0xFFFF)
 
