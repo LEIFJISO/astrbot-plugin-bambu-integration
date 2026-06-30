@@ -20,6 +20,7 @@ from typing import Optional
 from astrbot.api.event import filter, AstrMessageEvent, MessageChain
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
+from astrbot.core.agent.message import UserMessageSegment, AssistantMessageSegment, TextPart
 
 from cloud_api import send_code, login, fetch_mqtt_username, fetch_bindings
 from printer_manager import PrinterManager, PrinterState
@@ -28,7 +29,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.4.13")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.5.0")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -223,9 +224,26 @@ class BambuPlugin(Star):
             except Exception as e:
                 logger.warning(f"发送通知到 {umo} 失败: {e}")
 
+    async def _inject_to_conversation(self, umo: str, user_text: str, assistant_text: str):
+        try:
+            conv_mgr = self.context.conversation_manager
+            cid = await conv_mgr.get_curr_conversation_id(umo)
+            if not cid:
+                return
+            await conv_mgr.add_message_pair(
+                cid=cid,
+                user_message=UserMessageSegment(content=[TextPart(text=user_text)]),
+                assistant_message=AssistantMessageSegment(content=[TextPart(text=assistant_text)]),
+            )
+        except Exception:
+            pass
+
     def _on_native_push(self, serial: str, message: str):
         logger.info(f"[推送-原生] serial={serial} msg={message[:60]}")
         asyncio.create_task(self._send_to_session(message))
+        if self._config.get("push", {}).get("mode") == "native+log":
+            for umo in self._get_notify_targets():
+                asyncio.create_task(self._inject_to_conversation(umo, "[打印机通知]", message))
 
     async def _on_ai_push(self, event: AlertEvent):
         push_config = self._config.get("push", {})
@@ -239,7 +257,7 @@ class BambuPlugin(Star):
                 "要求：简洁自然，无需问候语。故障类事件着重提醒错误信息。"
                 "不要编造或猜测数据中没有的信息。"
             )
-        prompt = template.format(
+        event_prompt = template.format(
             printer_name=event.printer_name,
             printer_model=event.printer_model,
             event_type=event.message,
@@ -250,6 +268,24 @@ class BambuPlugin(Star):
             return
         try:
             umo = targets[0]
+
+            # 获取人格 system_prompt
+            system_prompt = ""
+            try:
+                conv_mgr = self.context.conversation_manager
+                cid = await conv_mgr.get_curr_conversation_id(umo)
+                if cid:
+                    conv = await conv_mgr.get_conversation(umo, cid)
+                    if conv and conv.persona_id:
+                        persona_mgr = self.context.persona_manager
+                        persona = persona_mgr.get_persona(conv.persona_id)
+                        if persona and persona.system_prompt:
+                            system_prompt = persona.system_prompt
+            except (ValueError, Exception):
+                pass
+
+            prompt = f"{system_prompt}\n\n{event_prompt}" if system_prompt else event_prompt
+
             provider_id = await self.context.get_current_chat_provider_id(umo=umo)
             if not provider_id:
                 await self._send_to_session(
@@ -258,9 +294,10 @@ class BambuPlugin(Star):
                 return
             llm_resp = await self.context.llm_generate(chat_provider_id=provider_id, prompt=prompt)
             ai_text = llm_resp.completion_text if llm_resp and hasattr(llm_resp, "completion_text") else str(llm_resp)
-            for umo in targets:
+            for target in targets:
                 chain = MessageChain().message(ai_text)
-                await self.context.send_message(umo, chain)
+                await self.context.send_message(target, chain)
+                asyncio.create_task(self._inject_to_conversation(target, "[打印机通知]", ai_text))
         except Exception as e:
             logger.warning(f"AI 推送失败，降级到原生推送: {e}")
             await self._send_to_session(

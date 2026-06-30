@@ -282,10 +282,6 @@ class PrinterManager:
             raw=data,
         )
 
-        msg = data.get("msg", 0)
-        if msg == 0 and new_state.mc_remaining_time > 0:
-            logger.debug(f"[Time] serial={serial[:12]} mc_remaining_time_raw={new_state.mc_remaining_time} (h={new_state.mc_remaining_time/3600:.1f} m={new_state.mc_remaining_time/60:.0f})")
-
         if is_incremental and old_state:
             merged_keys = []
             for key in _INCREMENTAL_KEEP_KEYS:

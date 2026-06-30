@@ -57,7 +57,7 @@
       "debug_log": {
         "description": "调试日志",
         "type": "bool",
-        "default": true,
+        "default": false,
         "hint": "开启后输出详细的 MQTT 消息流和推送链路日志"
       }
     }
@@ -70,7 +70,7 @@
         "description": "推送模式",
         "type": "string",
         "default": "native",
-        "options": ["native", "ai", "both"],
+        "options": ["native", "native+log", "ai", "both"],
         "hint": "native: 插件直接发送格式化通知；ai: 由 LLM 生成通知文案（失败降级 native）；both: 两条路径同时推送"
       },
       "enable_llm_tools": {
