@@ -204,6 +204,11 @@ cython_debug/
 # Test scripts (may contain tokens)
 test_mqtt.py
 _test_*.py
+_mqtt_*.py
+pushall_dump.json
+
+# Reference documents (not part of plugin)
+*参考*.md
 
 # Marimo
 marimo/_static/

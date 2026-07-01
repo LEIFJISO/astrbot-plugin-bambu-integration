@@ -18,9 +18,21 @@
 - [x] AI Push 后也注入对话上下文
 - [x] debug_log 默认关闭
 
-## v1.6.0 (远期)
+## v1.6.0 (计划)
 
-### 完整 Agent 模式
-- 研究如何在不持有 `AstrMessageEvent` 的后台场景中构造 Agent 上下文
-- 让 AI 推送时可以调用 `bambu_printer_status` 等工具
+### AI 管理工具
+注册 6 个 FunctionTool，让 AI 对话中可管理打印机配置：
+- `bambu_set_alert` — 开关内置提醒类型
+- `bambu_set_mute` — 设置静默时段
+- `bambu_set_push_mode` — 切换推送模式
+- `bambu_set_maintenance` — 修改维护任务间隔/启停
+- `bambu_set_counter` — 手动设置计数器
+- `bambu_add_rule` — 添加自定义提醒规则
+
+## v1.7.0 (远期)
+
+### 打印机远程控制
+通过 MQTT 发布命令到 `device/{serial}/request`（参考 MQTT消息格式参考.md 2.2 节）：
+- 发送 3MF/G-code 文件到打印机开始打印
+- 暂停/恢复/停止当前打印任务
 
