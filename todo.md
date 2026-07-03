@@ -18,6 +18,14 @@
 - [x] AI Push 后也注入对话上下文
 - [x] debug_log 默认关闭
 
+## v1.5.1 (计划)
+
+### 维护任务确认完成
+- 新增 `/bambu maintenance done <名称>` 指令
+- 记录完成时间戳 + 计数器值到 `data/bambu_state.json`
+- `/bambu maintenance` 输出显示"上次完成时间"
+- 与 `skip` 区别：`skip` 提前重置基准（我提前做了），`done` 保留完成记录（我做了并留痕）
+
 ## v1.6.0 (计划)
 
 ### AI 管理工具
@@ -33,6 +41,22 @@
 
 ### 打印机远程控制
 通过 MQTT 发布命令到 `device/{serial}/request`（参考 MQTT消息格式参考.md 2.2 节）：
-- 发送 3MF/G-code 文件到打印机开始打印
-- 暂停/恢复/停止当前打印任务
+
+**AI FunctionTool 层** — 6 个控制工具供 AI 对话调用：
+- `bambu_set_bed_temp` — 设置热床温度（烘干/保温）
+- `bambu_set_nozzle_temp` — 设置喷嘴温度（预加热/换料）
+- `bambu_pause_print` — 暂停当前打印
+- `bambu_resume_print` — 恢复当前打印
+- `bambu_stop_print` — 停止当前打印（需安全确认）
+- `bambu_set_light` — 控制灯光（检查模型）
+
+**典型场景**：
+- "热床保持 70°C 5 分钟烘干打印板"
+- "帮我把喷嘴加热到 250°C 准备换料"
+- "暂停打印，我要检查一下"
+
+**实现路径**：
+- 层 1: AI 理解意图 → 调用对应 Tool
+- 层 2: Tool → 翻译为 MQTT JSON payload 发布到 `device/{serial}/request`
+- 层 3: 危险操作（停止打印）要求二次确认
 
