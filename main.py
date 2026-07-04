@@ -29,7 +29,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.5.0")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.5.1")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -130,17 +130,21 @@ class BambuPlugin(Star):
         if self._config.get("maintenance_tasks"):
             return
         self._config["maintenance_tasks"] = [
-            {"__template_key": "task", "name": "工具头切刀检查", "enabled": True, "type": "hours", "interval": 80, "message": "累计打印{print_hours}h，建议检查切刀锋利度", "mute": ""},
+            {"__template_key": "task", "name": "工具头切刀检查", "enabled": True, "type": "hours", "interval": 250, "message": "累计打印{print_hours}h，建议检查切刀锋利度", "mute": ""},
             {"__template_key": "task", "name": "打印板清洁", "enabled": True, "type": "hours", "interval": 100, "message": "累计打印{print_hours}h，建议清洁打印板", "mute": ""},
             {"__template_key": "task", "name": "XY轴光轴润滑", "enabled": True, "type": "hours", "interval": 150, "message": "累计打印{print_hours}h，建议润滑XY轴光轴", "mute": ""},
             {"__template_key": "task", "name": "同步皮带检查", "enabled": True, "type": "hours", "interval": 200, "message": "累计打印{print_hours}h，建议检查皮带张紧度和齿面", "mute": ""},
             {"__template_key": "task", "name": "主挤出机清洁", "enabled": True, "type": "hours", "interval": 250, "message": "累计打印{print_hours}h，建议清洁挤出机并润滑齿轮", "mute": ""},
+            {"__template_key": "task", "name": "辅助挤出机清洁", "enabled": True, "type": "hours", "interval": 400, "message": "累计打印{print_hours}h，建议清洁辅助挤出机齿轮和PTFE管", "mute": ""},
             {"__template_key": "task", "name": "喷嘴检查", "enabled": True, "type": "hours", "interval": 300, "message": "累计打印{print_hours}h，建议检查喷嘴磨损和挤出不均", "mute": ""},
             {"__template_key": "task", "name": "Z轴丝杆润滑", "enabled": True, "type": "hours", "interval": 450, "message": "累计打印{print_hours}h，建议润滑Z轴丝杆", "mute": ""},
             {"__template_key": "task", "name": "线缆检查", "enabled": True, "type": "hours", "interval": 500, "message": "累计打印{print_hours}h，建议检查各线缆绝缘皮和接头", "mute": ""},
             {"__template_key": "task", "name": "碳滤芯更换", "enabled": True, "type": "hours", "interval": 600, "message": "累计打印{print_hours}h，建议更换活性炭滤芯", "mute": ""},
+            {"__template_key": "task", "name": "摄像头清洁", "enabled": True, "type": "hours", "interval": 500, "message": "累计打印{print_hours}h，建议清洁工具头摄像头和舱内摄像头", "mute": ""},
+            {"__template_key": "task", "name": "耗材缓冲器检查", "enabled": True, "type": "hours", "interval": 600, "message": "累计打印{print_hours}h，建议检查耗材缓冲器滑块和弹簧", "mute": ""},
             {"__template_key": "task", "name": "全面检查", "enabled": True, "type": "hours", "interval": 700, "message": "累计打印{print_hours}h，建议全面检查：硅胶套、喉管积碳、滑轮异响、线缆破损等", "mute": ""},
             {"__template_key": "task", "name": "全面校准", "enabled": True, "type": "hours", "interval": 500, "message": "累计打印{print_hours}h，建议执行全面校准：电机降噪、振动补偿、自动热床调平", "mute": ""},
+            {"__template_key": "task", "name": "运动精度校准", "enabled": False, "type": "hours", "interval": 168, "message": "累计打印{print_hours}h，建议执行运动精度校准（需官方校准板）", "mute": ""},
             {"__template_key": "task", "name": "打印板涂胶", "enabled": True, "type": "completions", "interval": 5, "message": "已完成{completion_count}次打印，建议涂胶", "mute": ""},
             {"__template_key": "task", "name": "擦嘴硅胶检查", "enabled": True, "type": "completions", "interval": 30, "message": "已完成{completion_count}次打印，建议检查擦嘴硅胶", "mute": ""},
         ]
