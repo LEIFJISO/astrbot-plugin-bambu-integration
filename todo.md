@@ -1,35 +1,48 @@
-# 推送系统待办
+# 待办
 
-## v1.4.8 ~ v1.4.13 (完成)
+## v1.4.8 ~ v1.5.1 (完成)
 
 - [x] 固件获取修复（product_name fallback, update_firmware_info KeyError）
 - [x] 双喷嘴支持（id=0 右/ id=1 左互通）
 - [x] 剩余时间单位修复（双喷嘴机型用分钟）
 - [x] 增量合并缺失字段（firmware_version, is_dual_nozzle, nozzle_temper_left, nozzle_target_left）
 - [x] 维护任务程序化投种 (_seed_defaults)
-- [x] 全面校准任务（500h）
-- [x] 风扇百分比 / HMS 格式化 / 层进度 / AMS 湿度百分比
-
-## v1.5.0 (完成)
-
+- [x] 风扇百分比 / HMS 格式化 / 层进度 / AMS 湿度百分比 / 辅助挤出机 / 摄像头 / 耗材缓冲器 / 运动精度校准
 - [x] `push.mode` 新增 `"native+log"` — 发送后注入对话上下文
 - [x] `_inject_to_conversation(umo, user_text, assistant_text)` 方法
-- [x] AI Push 人格注入：从 persona_manager 读取 system_prompt
-- [x] AI Push 后也注入对话上下文
+- [x] AI Push 人格注入 + 对话上下文注入
 - [x] debug_log 默认关闭
-
-## v1.5.1 (计划)
-
-### 维护任务确认完成
-- 新增 `/bambu maintenance done <名称>` 指令
-- 记录完成时间戳 + 计数器值到 `data/bambu_state.json`
-- `/bambu maintenance` 输出显示"上次完成时间"
-- 与 `skip` 区别：`skip` 提前重置基准（我提前做了），`done` 保留完成记录（我做了并留痕）
+- [x] 切刀间隔 80h→250h（PETG 实测）
+- [x] 维护任务确认完成：`/bambu maintenance done <名称>`
 
 ## v1.6.0 (计划)
 
+### 日历时间计数器
+- 新增 `wall_start` 时间戳（插件首次初始化设置，持久化到 `bambu_state.json`）
+- `calendar_hours = (now - wall_start) / 3600`，每次 `_evaluate` 更新
+- 维护任务 `type` options 追加 `"calendar"`，支持日历周期（如每 336h = 14 天）
+- 运动精度校准改为 `type: calendar, interval: 336`（不受打印频率影响）
+- `/bambu counters` 输出追加 `calendar_hours`
+
+### 当地湿度提醒
+- WebUI 新增 `humidity_warning` 配置组：
+  - `enabled` (bool, default false)
+  - `threshold` (int, default 70%)
+  - `location` (string, 城市名)
+- 打印开始（IDLE/PREPARE → RUNNING）时查询湿度，超阈值推送警告
+- `/bambu weather` 命令查询当前当地湿度及打印建议
+- 结果缓存 30 分钟
+
+### 米家本地数据源联动
+- 通过局域网米家网关获取室内温湿度传感器数据
+- 作为 `humidity_warning` 的数据源（替代公网 API）
+
+### 活跃耗材显示
+- 从 `extruder.info[].snow` 字段解析当前活跃料槽（AMS 编号 + 槽位号）
+- `/bambu info` 追加当前耗材信息（类型/颜色/余量）
+
 ### AI 管理工具
-注册 6 个 FunctionTool，让 AI 对话中可管理打印机配置：
+注册 6 个 FunctionTool，让 AI 在对话中代操配置：
 - `bambu_set_alert` — 开关内置提醒类型
 - `bambu_set_mute` — 设置静默时段
 - `bambu_set_push_mode` — 切换推送模式
@@ -40,7 +53,7 @@
 ## v1.7.0 (远期)
 
 ### 打印机远程控制
-通过 MQTT 发布命令到 `device/{serial}/request`（参考 MQTT消息格式参考.md 2.2 节）：
+通过 MQTT 发布命令到 `device/{serial}/request`：
 
 **AI FunctionTool 层** — 6 个控制工具供 AI 对话调用：
 - `bambu_set_bed_temp` — 设置热床温度（烘干/保温）
@@ -59,4 +72,3 @@
 - 层 1: AI 理解意图 → 调用对应 Tool
 - 层 2: Tool → 翻译为 MQTT JSON payload 发布到 `device/{serial}/request`
 - 层 3: 危险操作（停止打印）要求二次确认
-
