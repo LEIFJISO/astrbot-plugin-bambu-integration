@@ -13,7 +13,6 @@
 - [x] AI Push 人格注入 + 对话上下文注入
 - [x] debug_log 默认关闭
 - [x] 切刀间隔 80h→250h（PETG 实测）
-- [x] 维护任务确认完成：`/bambu maintenance done <名称>`
 
 ## v1.6.0 (计划)
 
@@ -40,6 +39,13 @@
 ### 活跃耗材显示
 - 从 `extruder.info[].snow` 字段解析当前活跃料槽（AMS 编号 + 槽位号）
 - `/bambu info` 追加当前耗材信息（类型/颜色/余量）
+
+### 维护任务确认完成
+- 跨过间隔阈值后**不自动确认**，进入 `pending_maintenance` 集合
+- 用户未确认的维护项在**每次打印完成时持续提醒**
+- `/bambu maintenance done <名称>`：确认完成，记录时间戳 + 计数值到 `maintenance_completed`，从 pending 移除
+- `/bambu maintenance` 输出区分：未确认项 / 已完成项 / 下次触发时间
+- 不同于 `skip`：`skip` 提前重置基准（我还没做，但暂时跳过），`done` 记录完成事实
 
 ### AI 管理工具
 注册 6 个 FunctionTool，让 AI 在对话中代操配置：
