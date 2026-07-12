@@ -47,6 +47,57 @@
 - `/bambu maintenance` 输出区分：未确认项 / 已完成项 / 下次触发时间
 - 不同于 `skip`：`skip` 提前重置基准（我还没做，但暂时跳过），`done` 记录完成事实
 
+### 可扩展条件系统
+将单一 `{type, interval}` 升级为可组合的条件列表：
+
+**单条件（向后兼容）**：
+```json
+{"type": "hours", "interval": 250}
+```
+
+**多条件 OR**（运动精度校准）：
+```json
+{
+  "combine_mode": "OR",
+  "conditions": [
+    {"type": "calendar", "interval": 336},
+    {"type": "hours", "interval": 50}
+  ]
+}
+```
+
+**多条件 AND**（湿度 < 40% 且 打印超 50h）：
+```json
+{
+  "combine_mode": "AND",
+  "conditions": [
+    {"type": "humidity", "operator": "<", "value": 40},
+    {"type": "hours", "interval": 50}
+  ]
+}
+```
+
+**条件类型注册表**（新增类型只需加一行）：
+```python
+CONDITION_FIELDS = {
+    "hours":       {"counter": "print_hours",      "label": "打印小时",  "is_interval": True},
+    "completions": {"counter": "completion_count",  "label": "完成次数",  "is_interval": True},
+    "calendar":    {"counter": "calendar_hours",    "label": "日历时间",  "is_interval": True},
+    "humidity":    {"counter": "current_humidity",  "label": "环境湿度",  "is_interval": False},
+}
+```
+
+**评估逻辑**：
+```python
+def _evaluate_maintenance(self, serial):
+    for task in tasks:
+        conds = task.get("conditions") or [{"type": task["type"], "interval": task["interval"]}]
+        mode = task.get("combine_mode", "OR")
+        results = [self._check_condition(c, task_id) for c in conds]
+        met = any(results) if mode == "OR" else all(results)
+        if met: trigger(task)
+```
+
 ### AI 管理工具
 注册 6 个 FunctionTool，让 AI 在对话中代操配置：
 - `bambu_set_alert` — 开关内置提醒类型
