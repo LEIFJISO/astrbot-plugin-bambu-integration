@@ -29,7 +29,7 @@ from alert_engine import AlertEngine, AlertEvent
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.5.1")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.5.2")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -285,6 +285,10 @@ class BambuPlugin(Star):
                         persona = persona_mgr.get_persona(conv.persona_id)
                         if persona and persona.system_prompt:
                             system_prompt = persona.system_prompt
+                if not system_prompt:
+                    default_v3 = self.context.persona_manager.get_default_persona_v3(umo)
+                    if default_v3 and default_v3.get("prompt"):
+                        system_prompt = default_v3["prompt"]
             except (ValueError, Exception):
                 pass
 

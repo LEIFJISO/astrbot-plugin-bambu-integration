@@ -14,6 +14,9 @@
 - [x] debug_log 默认关闭
 - [x] 切刀间隔 80h→250h（PETG 实测）
 
+### 已知问题
+- `debug_log` 开关无效：子模块改用 `from astrbot.api import logger` 后不受 `logging.getLogger().setLevel()` 控制。v1.6.0 重新设计日志架构时一并修复。
+
 ## v1.6.0 (计划)
 
 ### 日历时间计数器
