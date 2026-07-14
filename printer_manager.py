@@ -234,8 +234,17 @@ class PrinterManager:
         logger.debug(f"[State] serial={serial[:12]} msg={msg} incr={is_incremental} h2d={is_h2d}(stored={self._is_h2d.get(serial, False)})")
 
         if is_h2d:
-            nozzle_current, nozzle_target, bed_current, bed_target = _parse_temperature_h2d(data)
-            left_current, left_target, is_dual = _parse_dual_nozzle(data)
+            if is_incremental and old_state and not _is_h2d_model(data):
+                nozzle_current = old_state.nozzle_temper
+                nozzle_target = old_state.nozzle_target_temper
+                bed_current = old_state.bed_temper
+                bed_target = old_state.bed_target_temper
+                left_current = old_state.nozzle_temper_left
+                left_target = old_state.nozzle_target_left
+                is_dual = old_state.is_dual_nozzle
+            else:
+                nozzle_current, nozzle_target, bed_current, bed_target = _parse_temperature_h2d(data)
+                left_current, left_target, is_dual = _parse_dual_nozzle(data)
         else:
             nozzle_current, nozzle_target, bed_current, bed_target = _parse_temperature_standard(data)
             left_current, left_target, is_dual = 0.0, 0.0, False
