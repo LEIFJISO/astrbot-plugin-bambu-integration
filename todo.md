@@ -168,25 +168,25 @@ def _evaluate_maintenance(self, serial):
 - `bambu_set_counter` — 手动设置计数器
 - `bambu_add_rule` — 添加自定义提醒规则
 
-## v1.7.0 (远期)
+### 热端兼容性检测
+- 材料分类常量：ENGINEERING / HIGH_TEMP / LOW_TEMP（来自 Bambu 官方分类）
+- 打印开始（IDLE→RUNNING）时检测当前耗材类型 vs 热端材质
+- 工程材料（PA-CF/PPA-CF/PET-CF/PPS-CF/ABS-GF/ASA-CF/PC 等）→ 一律暂停并推送确认通知
+  - 暂停命令：`{"print": {"command": "pause"}}` 发布到 `device/{serial}/request`
+  - 通知含上次/当前热端类型，提示用户确认或更换
+  - `/bambu confirm hotend` → 恢复打印 + 更新 `last_tray_type`/`last_nozzle_type`
+- 高温→低温切换（ASA→PLA 等）→ 仅推送碳化警告，不暂停
+- `per_nozzle` 状态持久化到 `bambu_state.json`（按喷嘴 id 分别追踪上次的 nozzle_type 和 tray_type）
 
-### 打印机远程控制
-通过 MQTT 发布命令到 `device/{serial}/request`：
+### MQTT 命令通道（前移自 v1.7.0）
+- `mqtt_client.py` 新增 `pause_print(serial)` / `resume_print(serial)` / `stop_print(serial)`
+- 为 AI 远程控制提供基础命令通道
 
-**AI FunctionTool 层** — 6 个控制工具供 AI 对话调用：
-- `bambu_set_bed_temp` — 设置热床温度（烘干/保温）
-- `bambu_set_nozzle_temp` — 设置喷嘴温度（预加热/换料）
-- `bambu_pause_print` — 暂停当前打印
-- `bambu_resume_print` — 恢复当前打印
-- `bambu_stop_print` — 停止当前打印（需安全确认）
-- `bambu_set_light` — 控制灯光（检查模型）
+## v1.7.0
 
-**典型场景**：
-- "热床保持 70°C 5 分钟烘干打印板"
-- "帮我把喷嘴加热到 250°C 准备换料"
-- "暂停打印，我要检查一下"
-
-**实现路径**：
-- 层 1: AI 理解意图 → 调用对应 Tool
-- 层 2: Tool → 翻译为 MQTT JSON payload 发布到 `device/{serial}/request`
-- 层 3: 危险操作（停止打印）要求二次确认
+### AI 远程控制打印机
+基于 v1.6.0 的 MQTT 命令通道，注册 AI FunctionTool：
+- `bambu_set_bed_temp` / `bambu_set_nozzle_temp` — 温度控制
+- `bambu_pause_print` / `bambu_resume_print` / `bambu_stop_print` — 打印控制
+- `bambu_set_light` — 灯光控制
+- 危险操作（停止打印）需 AI 二次确认
