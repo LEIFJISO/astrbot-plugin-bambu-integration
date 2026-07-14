@@ -86,6 +86,7 @@ CONDITION_FIELDS = {
     "hours":       {"counter": "print_hours",      "label": "打印小时",  "is_interval": True},
     "completions": {"counter": "completion_count",  "label": "完成次数",  "is_interval": True},
     "calendar":    {"counter": "calendar_hours",    "label": "日历时间",  "is_interval": True},
+    "filament_used": {"counter": "filament_used",  "label": "耗材用量(g)", "is_interval": True},
     "humidity":    {"counter": "current_humidity",  "label": "环境湿度",  "is_interval": False},
 }
 ```
@@ -100,6 +101,38 @@ def _evaluate_maintenance(self, serial):
         met = any(results) if mode == "OR" else all(results)
         if met: trigger(task)
 ```
+
+### 耗材用量追踪 (filament_used 计数器)
+
+**背景**：切刀等部件的维护周期官方按「打印卷数」推荐（常规 8-12 卷，高磨损 6-10 卷）。X2D pushall 不直接含 `print_weight` 字段，需通过 AMS 槽位 `remain` 变化推算。**定义 1 卷 = 1kg 净重。**
+
+**累加逻辑**（`_update_filament` 方法，打印完成时触发）：
+
+1. 打印前后对比每个 AMS 槽位 `remain` 百分比差值
+2. 正常消耗：`delta = tray_weight × (old_remain - new_remain) / 100`（克）
+3. 手动续盘检测：`new - old > 50`（跳变）→ 视作整盘用完 → `tray_weight` 全量计入
+4. AMS 自动换料：追踪打印期间活跃槽位列表（`snow` 变化），各槽 delta 累加
+
+**高磨损耗材加权**：
+
+- 配置项 `monitor.abrasive_multiplier`（float, default `1.3`，WebUI 可调）
+- 碳纤/玻纤/夜光/大理石/金属/木填充等耗材 → `filament_used += delta × multiplier`
+- 识别来源：RFID `tray_info_idx` 硬编码表 + 材料名关键词兜底
+
+**磨蚀性耗材 RFID 代码表**（来自 ha-bambulab + Bambu 官方）：
+
+| 类别 | 代码 |
+|---|---|
+| 碳纤维 (PA/PET/PLA/ABS/PPA/PPS) | GFA50, GFG50, GFB51, GFN03-06, GFT01-02, GFT98, GFL50, GFL52-55, GFL98, GFG98, GFN98, GFN97, GFP96, GFP98 |
+| 玻璃纤维 (ABS/PA/PPA/PP) | GFB50, GFN08, GFN96, GFP95, GFL51 |
+| 颗粒填充 (大理石/闪光/夜光/Aero/Galaxy) | GFA07, GFA08, GFA11, GFA12, GFA15 |
+| 关键词兜底 | "CF","GF","Carbon Fiber","Glass Fiber","Marble","Sparkle","Glow","Wood","Metal","Aero","Galaxy" |
+
+**切刀默认维护任务**（双层条件 OR）：
+```json
+{"combine_mode":"OR","conditions":[{"type":"filament_used","interval":8000},{"type":"hours","interval":250}]}
+```
+等效消耗 8kg 常规耗材（≈8 卷）**或**打印 250h → 先到先触发。
 
 ### AI 管理工具
 注册 6 个 FunctionTool，让 AI 在对话中代操配置：
