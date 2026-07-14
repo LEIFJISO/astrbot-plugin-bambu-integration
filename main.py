@@ -26,10 +26,11 @@ from cloud_api import send_code, login, fetch_mqtt_username, fetch_bindings
 from printer_manager import PrinterManager, PrinterState
 from mqtt_client import BambuMQTTClient
 from alert_engine import AlertEngine, AlertEvent
+from hms_codes import lookup_hms
 import shared
 
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.5.2")
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.5.3")
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -428,8 +429,13 @@ class BambuPlugin(Star):
         if state.print_error:
             lines.append(f"错误码: {state.print_error}")
         if state.hms:
-            codes = [str(h.get("code", h)) for h in state.hms if isinstance(h, dict)]
-            lines.append(f"HMS: {', '.join(codes[:5])}")
+            lines.append("HMS:")
+            for h in state.hms:
+                if isinstance(h, dict):
+                    attr = h.get("attr", 0)
+                    code = h.get("code", 0)
+                    info = lookup_hms(attr, code)
+                    lines.append(f"  [{code}] {info['module']} | {info['severity']} | {info['text']}")
         if not state.online:
             lines.append("离线")
         return "\n".join(lines)

@@ -262,7 +262,7 @@ class AlertEngine:
                 pass
 
         if alerts.get("on_complete", True):
-            if new.gcode_state == STATE_FINISH and old.gcode_state not in (STATE_FINISH, STATE_IDLE):
+            if new.gcode_state == STATE_FINISH and old.gcode_state == STATE_RUNNING:
                 name = new.name or new.model or ""
                 model = new.model or ""
                 all_events.append(AlertEvent(
@@ -448,7 +448,7 @@ class AlertEngine:
             if 0 < elapsed < 600:
                 self._counters["print_hours"] += elapsed / 3600.0
 
-        if old.gcode_state != STATE_FINISH and new.gcode_state == STATE_FINISH:
+        if old.gcode_state == STATE_RUNNING and new.gcode_state == STATE_FINISH:
             self._counters["completion_count"] += 1
 
         if old.gcode_state != STATE_FAILED and new.gcode_state == STATE_FAILED:
