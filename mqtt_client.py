@@ -160,8 +160,8 @@ class BambuMQTTClient:
                 await self._handle_message(topic, payload)
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"MQTT 消息处理失败: {e}")
 
     async def _handle_message(self, topic: str, payload: bytes):
         serial = ""

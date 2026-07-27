@@ -207,6 +207,12 @@ _test_*.py
 _mqtt_*.py
 pushall_dump.json
 
+# Data collector artifacts
+logs/
+*.token
+*.pid
+_run_collector.ps1
+
 # Reference documents (not part of plugin)
 *参考*.md
 

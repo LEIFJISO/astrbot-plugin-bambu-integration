@@ -29,8 +29,15 @@ from alert_engine import AlertEngine, AlertEvent
 from hms_codes import lookup_hms
 import shared
 
+# 此段代码由AI生成，功能为：从 metadata.yaml 动态读取插件版本号
+import yaml
+with open(os.path.join(os.path.dirname(__file__), "metadata.yaml"), "r") as _f:
+    _meta = yaml.safe_load(_f)
+_VERSION = _meta.get("version", "v1.5.5")
+_VERSION_NUM = _VERSION.lstrip("v")
 
-@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", "1.5.4")
+
+@register("astrbot_plugin_bambu_integration", "LiuEnder", "拓竹 3D 打印机集成插件", _VERSION_NUM)
 class BambuPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -53,7 +60,7 @@ class BambuPlugin(Star):
         _pm_mtime = os.path.getmtime(_pm.__file__) if _pm.__file__ else 0
         import time as _time
         logger.info(
-            f"插件已加载 v1.3.1 | "
+            f"插件已加载 {_VERSION} | "
             f"printer_manager 修改时间: {_time.strftime('%H:%M:%S', _time.localtime(_pm_mtime))} | "
             f"callback={'已设置' if self._manager._on_state_change else '未设置'} | "
             f"notify_targets={'已配置' if config.get('notify', {}).get('session_id') else '未配置'}"
@@ -76,8 +83,13 @@ class BambuPlugin(Star):
         asyncio.create_task(self._periodic_pushall())
         if self._config.get("monitor", {}).get("debug_log", False):
             import logging
-            for name in ("mqtt_client", "printer_manager", "alert_engine"):
-                logging.getLogger(f"astrbot_plugin_bambu_integration.{name}").setLevel(logging.DEBUG)
+            # 此段代码由AI生成，功能为：修复 debug_log 开关，针对 astrbot.api.logger 的真实名称设置 DEBUG 级别
+            log = logging.getLogger(logger.name)
+            log.setLevel(logging.DEBUG)
+            if log.propagate:
+                for h in logging.root.handlers:
+                    if h.level > logging.DEBUG:
+                        h.setLevel(logging.DEBUG)
             logger.info("调试日志已启用")
         if token and not self._tools_registered and self._config.get("push", {}).get("enable_llm_tools", True):
             await self._register_tools()
@@ -94,6 +106,8 @@ class BambuPlugin(Star):
                 data = json.load(f)
             self._alert_engine.load_counters(data.get("counters", {}))
             self._alert_engine.load_maintenance_triggers(data.get("maintenance_triggers", {}))
+            # 此段代码由AI生成，功能为：加载 HMS 去重状态
+            self._alert_engine.load_hms_alerted(data.get("hms_alerted", {}))
         except (FileNotFoundError, json.JSONDecodeError):
             pass
 
@@ -101,13 +115,15 @@ class BambuPlugin(Star):
         data = {
             "counters": self._alert_engine.get_counters(),
             "maintenance_triggers": self._alert_engine._maintenance_trigger,
+            # 此段代码由AI生成，功能为：持久化 HMS 去重状态
+            "hms_alerted": self._alert_engine.get_hms_alerted(),
         }
         try:
             os.makedirs("data", exist_ok=True)
             with open(self._state_path, "w") as f:
                 json.dump(data, f)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"保存状态失败: {e}")
 
     async def _periodic_save(self):
         while True:
@@ -240,8 +256,8 @@ class BambuPlugin(Star):
                 user_message=UserMessageSegment(content=[TextPart(text=user_text)]),
                 assistant_message=AssistantMessageSegment(content=[TextPart(text=assistant_text)]),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"注入对话失败 (umo={umo}): {e}")
 
     def _on_native_push(self, serial: str, message: str):
         logger.info(f"[推送-原生] serial={serial} msg={message[:60]}")
@@ -593,7 +609,7 @@ class BambuPlugin(Star):
         maintenance_count = len(self._config.get("maintenance_tasks", []))
 
         lines = [
-            f"版本：v1.4.6",
+            f"版本：{_VERSION}",
             f"登录状态：{'已登录' if token else '未登录'}",
             f"账号：{cloud.get('account', '未设置')}",
             f"区域：{cloud.get('region', 'cn')}",

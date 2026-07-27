@@ -52,6 +52,7 @@ class PrinterState:
     name: str = ""
     model: str = ""
     gcode_state: str = ""
+    msg: int = 0  # 此段代码由AI生成，功能为：记录 pushall msg 值 (0=全量, 1=增量)，供 HMS 去重使用
     mc_percent: int = 0
     mc_remaining_time: int = 0
     nozzle_temper: float = 0.0
@@ -256,6 +257,7 @@ class PrinterManager:
             name=data.get("name", ""),
             model=self._models.get(serial, ""),
             gcode_state=str(data.get("gcode_state", "")),
+            msg=msg,  # 此段代码由AI生成，功能为：传递 pushall msg 到状态对象
             mc_percent=int(data.get("mc_percent", 0)),
             mc_remaining_time=int(data.get("mc_remaining_time", 0)),
             nozzle_temper=nozzle_current,

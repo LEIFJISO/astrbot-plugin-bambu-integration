@@ -69,7 +69,8 @@ def _mute_active(mute_range: str) -> bool:
         return now_min >= start_min or now_min < end_min
 
 
-def _build_state_summary(state: PrinterState) -> str:
+def _build_state_summary(state: PrinterState, hms_alerted: set = None, msg: int = None) -> str:
+    # 此段代码由AI生成，功能为：hms_alerted 用于 HMS 去重；msg 用于区分全量/增量（msg=0 才做 HMS 判断，msg=1 忽略）
     lines = []
     state_labels = {
         STATE_IDLE: "空闲", STATE_RUNNING: "打印中", STATE_PAUSE: "暂停",
@@ -93,7 +94,22 @@ def _build_state_summary(state: PrinterState) -> str:
     if state.print_error:
         lines.append(f"错误码: {state.print_error}")
     if state.hms:
-        lines.append(f"HMS: {state.hms}")
+        if hms_alerted is not None and msg == 0:
+            # 此段代码由AI生成，功能为：仅在全量推送(msg=0)时做 HMS 去重
+            unalerted = [h for h in state.hms if (h.get("attr"), h.get("code")) not in hms_alerted]
+            for h in unalerted:
+                hms_alerted.add((h.get("attr"), h.get("code")))
+            # 清理已消失的 HMS：alerted 中有但当前 msg=0 不存在的 → 固件真清除了
+            current_codes = {(h.get("attr"), h.get("code")) for h in state.hms}
+            removed = hms_alerted - current_codes
+            if removed:
+                hms_alerted.difference_update(removed)
+        elif msg is not None and msg != 0:
+            unalerted = []  # 增量推送忽略 HMS
+        else:
+            unalerted = state.hms  # 向后兼容：无 msg 参数时显示全部 HMS
+        if unalerted:
+            lines.append(f"HMS: {unalerted}")
     return "\n".join(lines)
 
 
@@ -180,6 +196,9 @@ def _evaluate_filament(old: PrinterState, new: PrinterState, threshold: int, ale
 
 def _evaluate_cooldown(old: PrinterState, new: PrinterState, alert_delay: int) -> list[AlertEvent]:
     events = []
+    # 此段代码由AI生成，功能为：防止 bed_temper=0 误触发降温通知
+    if new.bed_temper <= 0:
+        return events
     name = new.name or new.model or ""
     model = new.model or ""
 
@@ -208,6 +227,7 @@ class AlertEngine:
         self._counters: dict[str, float] = {"print_hours": 0, "completion_count": 0, "failure_consecutive": 0}
         self._last_pushall_time: dict[str, float] = {}
         self._maintenance_trigger: dict[str, float] = {}
+        self._hms_alerted: dict[str, set] = {}  # 此段代码由AI生成，功能为：HMS 去重，serial → set of (attr, code) tuples
         self._on_native: Optional[Callable] = None
         self._on_ai: Optional[Callable] = None
         self._silent_events: dict[str, list[str]] = {}
@@ -236,6 +256,13 @@ class AlertEngine:
     def load_maintenance_triggers(self, data: dict):
         self._maintenance_trigger = data
 
+    # 此段代码由AI生成，功能为：HMS 去重状态的持久化存取
+    def load_hms_alerted(self, data: dict):
+        self._hms_alerted = {k: set(tuple(t) for t in v) for k, v in data.items()}
+
+    def get_hms_alerted(self) -> dict:
+        return {k: [list(t) for t in v] for k, v in self._hms_alerted.items()}
+
     def set_counter(self, name: str, value: float):
         if name not in self._counters:
             return False
@@ -245,6 +272,10 @@ class AlertEngine:
         return True
 
     def _evaluate(self, serial: str, old: PrinterState, new: PrinterState):
+        # 此段代码由AI生成，功能为：关键路径 DEBUG 日志
+        logger.debug(f"[Evaluate] serial={serial[:12]} old={old.gcode_state} new={new.gcode_state} task={new.task_id[:8] if new.task_id else 'none'}")
+        # 此段代码由AI生成，功能为：HMS 去重集合，每个打印周期内同一 HMS 码只提醒一次
+        hms_set = self._hms_alerted.setdefault(serial, set())
         config = self._config
         alert_delay = config.get("monitor", {}).get("alert_delay", 90)
         alerts = config.get("alerts", {})
@@ -267,7 +298,7 @@ class AlertEngine:
                 model = new.model or ""
                 all_events.append(AlertEvent(
                     EVENT_COMPLETE, serial, name, model,
-                    _build_state_summary(new), "打印完成"
+                    _build_state_summary(new, hms_set, new.msg), "打印完成"
                 ))
 
         if alerts.get("on_error", True):
@@ -282,7 +313,7 @@ class AlertEngine:
                     msg += f" HMS: {hms_str}"
                 all_events.append(AlertEvent(
                     EVENT_ERROR, serial, name, model,
-                    _build_state_summary(new), msg
+                    _build_state_summary(new, hms_set, new.msg), msg
                 ))
 
         progress_str = alerts.get("progress_nodes", "50,90")
@@ -312,7 +343,7 @@ class AlertEngine:
             model = new.model or ""
             all_events.append(AlertEvent(
                 EVENT_OFFLINE, serial, name, model,
-                _build_state_summary(new), "打印机离线"
+                _build_state_summary(new, hms_set, new.msg), "打印机离线"
             ))
 
         if alerts.get("on_recovery", True) and not old.online and new.online:
@@ -320,7 +351,7 @@ class AlertEngine:
             model = new.model or ""
             all_events.append(AlertEvent(
                 EVENT_RECOVERY, serial, name, model,
-                _build_state_summary(new), "打印机已恢复连接"
+                _build_state_summary(new, hms_set, new.msg), "打印机已恢复连接"
             ))
 
         sent_task_ids = self._task_ids.setdefault(serial, set())
@@ -447,6 +478,7 @@ class AlertEngine:
             elapsed = now - last
             if 0 < elapsed < 600:
                 self._counters["print_hours"] += elapsed / 3600.0
+                logger.debug(f"[Counter] serial={serial[:12]} print_hours +={elapsed/3600.0:.3f}h total={self._counters['print_hours']:.1f}h")
 
         if old.gcode_state == STATE_RUNNING and new.gcode_state == STATE_FINISH:
             self._counters["completion_count"] += 1
@@ -458,6 +490,9 @@ class AlertEngine:
 
     def _evaluate_maintenance(self, serial: str):
         tasks = self._config.get("maintenance_tasks", [])
+        # 此段代码由AI生成，功能为：维护评估 DEBUG 日志
+        enabled_count = sum(1 for t in tasks if t.get("enabled", True))
+        logger.debug(f"[Maint] serial={serial[:12]} tasks={len(tasks)} enabled={enabled_count}")
         for task in tasks:
             if not task.get("enabled", True):
                 continue
@@ -487,8 +522,8 @@ class AlertEngine:
                     completion_count=int(self._counters["completion_count"]),
                     failure_consecutive=int(self._counters["failure_consecutive"]),
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"维护任务消息格式化失败 (task={task.get('name')}): {e}")
 
             name = self._last_state.get(serial)
             printer_name = name.name or name.model or serial if name else serial
@@ -512,11 +547,9 @@ class AlertEngine:
             logger.info(f"[Dispatch] serial={event.serial[:12]} type={event.event_type} MUTED")
             return
 
-        push_config = self._config.get("push", {})
-        mode = push_config.get("mode", "native")
         logger.info(f"[Dispatch] serial={event.serial[:12]} type={event.event_type} mode={mode} native={bool(self._on_native)} ai={bool(self._on_ai)}")
 
-        if mode in ("native", "both"):
+        if mode in ("native", "native+log", "both"):
             native_msg = _build_native_message(event)
             if event.event_type == EVENT_CUSTOM and event.custom_message:
                 native_msg = event.custom_message if not event.custom_message.startswith("🖨️") else event.custom_message

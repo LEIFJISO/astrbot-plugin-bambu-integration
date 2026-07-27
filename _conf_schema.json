@@ -71,7 +71,7 @@
         "type": "string",
         "default": "native",
         "options": ["native", "native+log", "ai", "both"],
-        "hint": "native: 插件直接发送格式化通知；ai: 由 LLM 生成通知文案（失败降级 native）；both: 两条路径同时推送"
+        "hint": "native: 插件直接发送格式化通知；native+log: 除推送外还将消息注入 AI 对话上下文；ai: 由 LLM 生成通知文案（失败降级 native）；both: native + ai 两条路径同时推送"
       },
       "enable_llm_tools": {
         "description": "启用 LLM 查询工具",
