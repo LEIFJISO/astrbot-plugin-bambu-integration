@@ -81,12 +81,14 @@ class BambuPlugin(Star):
         )
         asyncio.create_task(self._periodic_save())
         asyncio.create_task(self._periodic_pushall())
-        # 此段代码由AI生成，功能为：debug_log 双向控制，开关时设置子模块 logger 级别
+        # 此段代码由AI生成，功能为：debug_log 双向控制，通过 AstrBot 官方 LogManager API
         import logging
+        from astrbot.core import LogManager
         debug_enabled = self._config.get("monitor", {}).get("debug_log", False)
-        level = logging.DEBUG if debug_enabled else logging.INFO
+        level_str = "DEBUG" if debug_enabled else "INFO"
         for name in ("mqtt_client", "printer_manager", "alert_engine"):
-            logging.getLogger(f"astrbot_plugin_bambu_integration.{name}").setLevel(level)
+            log = logging.getLogger(f"astrbot_plugin_bambu_integration.{name}")
+            LogManager.configure_logger(log, config=None, override_level=level_str)
         if debug_enabled:
             logger.info("调试日志已启用")
         if token and not self._tools_registered and self._config.get("push", {}).get("enable_llm_tools", True):
