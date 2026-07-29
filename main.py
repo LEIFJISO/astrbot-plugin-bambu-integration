@@ -81,15 +81,13 @@ class BambuPlugin(Star):
         )
         asyncio.create_task(self._periodic_save())
         asyncio.create_task(self._periodic_pushall())
-        if self._config.get("monitor", {}).get("debug_log", False):
-            import logging
-            # 此段代码由AI生成，功能为：修复 debug_log 开关，针对 astrbot.api.logger 的真实名称设置 DEBUG 级别
-            log = logging.getLogger(logger.name)
-            log.setLevel(logging.DEBUG)
-            if log.propagate:
-                for h in logging.root.handlers:
-                    if h.level > logging.DEBUG:
-                        h.setLevel(logging.DEBUG)
+        # 此段代码由AI生成，功能为：debug_log 双向控制，开关时设置子模块 logger 级别
+        import logging
+        debug_enabled = self._config.get("monitor", {}).get("debug_log", False)
+        level = logging.DEBUG if debug_enabled else logging.INFO
+        for name in ("mqtt_client", "printer_manager", "alert_engine"):
+            logging.getLogger(f"astrbot_plugin_bambu_integration.{name}").setLevel(level)
+        if debug_enabled:
             logger.info("调试日志已启用")
         if token and not self._tools_registered and self._config.get("push", {}).get("enable_llm_tools", True):
             await self._register_tools()
@@ -290,26 +288,30 @@ class BambuPlugin(Star):
         try:
             umo = targets[0]
 
-            # 获取人格 system_prompt
+            # 此段代码由AI生成，功能为：获取对话上下文，让 AI 知道之前说了什么
+            conv_mgr = self.context.conversation_manager
+            cid = await conv_mgr.get_curr_conversation_id(umo)
+            history_messages = []
+            if cid:
+                conv = await conv_mgr.get_conversation(umo, cid)
+                if conv and hasattr(conv, "messages") and conv.messages:
+                    for msg in conv.messages[-10:]:
+                        history_messages.append(str(msg))
+
+            # 此段代码由AI生成，功能为：获取人格 system_prompt（await 修复）
             system_prompt = ""
             try:
-                conv_mgr = self.context.conversation_manager
-                cid = await conv_mgr.get_curr_conversation_id(umo)
-                if cid:
-                    conv = await conv_mgr.get_conversation(umo, cid)
-                    if conv and conv.persona_id:
-                        persona_mgr = self.context.persona_manager
-                        persona = persona_mgr.get_persona(conv.persona_id)
-                        if persona and persona.system_prompt:
-                            system_prompt = persona.system_prompt
+                if cid and conv and hasattr(conv, "persona_id") and conv.persona_id:
+                    persona_mgr = self.context.persona_manager
+                    persona = await persona_mgr.get_persona(conv.persona_id)
+                    if persona and hasattr(persona, "system_prompt") and persona.system_prompt:
+                        system_prompt = persona.system_prompt
                 if not system_prompt:
-                    default_v3 = self.context.persona_manager.get_default_persona_v3(umo)
+                    default_v3 = await self.context.persona_manager.get_default_persona_v3(umo)
                     if default_v3 and default_v3.get("prompt"):
                         system_prompt = default_v3["prompt"]
-            except (ValueError, Exception):
-                pass
-
-            prompt = f"{system_prompt}\n\n{event_prompt}" if system_prompt else event_prompt
+            except (ValueError, Exception) as e:
+                logger.debug(f"获取人格失败 (umo={umo}): {e}")
 
             provider_id = await self.context.get_current_chat_provider_id(umo=umo)
             if not provider_id:
@@ -317,7 +319,13 @@ class BambuPlugin(Star):
                     f"{event.printer_name} | {event.message}\n{event.state_summary}"
                 )
                 return
-            llm_resp = await self.context.llm_generate(chat_provider_id=provider_id, prompt=prompt)
+            # 此段代码由AI生成，功能为：system_prompt 作为独立参数传递，contexts 传入对话历史
+            llm_resp = await self.context.llm_generate(
+                chat_provider_id=provider_id,
+                prompt=event_prompt,
+                system_prompt=system_prompt or None,
+                contexts=history_messages,
+            )
             ai_text = llm_resp.completion_text if llm_resp and hasattr(llm_resp, "completion_text") else str(llm_resp)
             for target in targets:
                 chain = MessageChain().message(ai_text)
