@@ -220,8 +220,8 @@
             "description": "触发模式",
             "type": "string",
             "default": "edge",
-            "options": ["edge", "level"],
-            "hint": "edge: 条件从不成立变为成立时触发一次（默认，适合状态切换类条件）\nlevel: 条件持续成立时按冷却时间重复推送（适合持续告警类条件）"
+            "options": ["edge", "level", "once"],
+            "hint": "edge: 条件从不成立变为成立时触发一次（默认，适合状态切换类条件）\nlevel: 条件持续成立时按冷却时间重复推送（适合持续告警类条件）\nonce: 首次触发后锁定，新打印开始时复位（适合降温完成、一次性能通知）"
           },
           "mute": {
             "description": "静默时段",

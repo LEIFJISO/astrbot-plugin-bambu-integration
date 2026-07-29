@@ -224,6 +224,7 @@ class AlertEngine:
         self._task_ids: dict[str, set] = {}
         self._custom_last_trigger: dict[str, float] = {}
         self._rule_prev: dict[str, bool] = {}
+        self._rule_once_fired: dict[str, bool] = {}  # 此段代码由AI生成，功能为：once 模式锁定状态，新打印开始时清空
         self._counters: dict[str, float] = {"print_hours": 0, "completion_count": 0, "failure_consecutive": 0}
         self._last_pushall_time: dict[str, float] = {}
         self._maintenance_trigger: dict[str, float] = {}
@@ -273,7 +274,7 @@ class AlertEngine:
 
     def _evaluate(self, serial: str, old: PrinterState, new: PrinterState):
         # 此段代码由AI生成，功能为：关键路径 DEBUG 日志
-        logger.debug(f"[Evaluate] serial={serial[:12]} old={old.gcode_state} new={new.gcode_state} task={new.task_id[:8] if new.task_id else 'none'}")
+        # logger.debug(f"[Evaluate] serial={serial[:12]} old={old.gcode_state} new={new.gcode_state} task={new.task_id[:8] if new.task_id else 'none'}")
         # 此段代码由AI生成，功能为：HMS 去重集合，每个打印周期内同一 HMS 码只提醒一次
         hms_set = self._hms_alerted.setdefault(serial, set())
         config = self._config
@@ -329,13 +330,22 @@ class AlertEngine:
             all_events.extend(_evaluate_filament(old, new, threshold, alert_delay))
 
         if alerts.get("on_cooldown", True):
-            all_events.extend(_evaluate_cooldown(old, new, alert_delay))
+            # 此段代码由AI生成，功能为：cooldown 去重——每个打印周期只触发一次降温通知
+            cooldown_key = f"cooldown:{serial}"
+            if not self._rule_once_fired.get(cooldown_key, False):
+                cooldown_events = _evaluate_cooldown(old, new, alert_delay)
+                if cooldown_events:
+                    self._rule_once_fired[cooldown_key] = True
+                all_events.extend(cooldown_events)
 
         custom_rules = config.get("custom_rules", [])
         if custom_rules:
             all_events.extend(self._evaluate_custom_rules(old, new, custom_rules))
 
         self._update_counters(serial, old, new)
+        # 此段代码由AI生成，功能为：新打印开始时清空 once 模式锁定，复位所有 once 规则
+        if new.gcode_state == STATE_RUNNING and old.gcode_state != STATE_RUNNING:
+            self._rule_once_fired.clear()
         self._evaluate_maintenance(serial)
 
         if alerts.get("on_offline", True) and old.online and not new.online:
@@ -424,6 +434,19 @@ class AlertEngine:
                     self._custom_last_trigger[key] = time.time()
                 else:
                     continue
+            # 此段代码由AI生成，功能为：once 模式——首次触发后锁定，新打印开始才复位
+            elif trigger_mode == "once":
+                if self._rule_once_fired.get(key, False):
+                    continue
+                if not prev:
+                    cooldown = rule.get("cooldown", 0)
+                    last = self._custom_last_trigger.get(key, 0)
+                    if time.time() - last < cooldown:
+                        continue
+                    self._custom_last_trigger[key] = time.time()
+                    self._rule_once_fired[key] = True
+                else:
+                    continue
             else:
                 cooldown = rule.get("cooldown", 300)
                 last = self._custom_last_trigger.get(key, 0)
@@ -478,7 +501,7 @@ class AlertEngine:
             elapsed = now - last
             if 0 < elapsed < 600:
                 self._counters["print_hours"] += elapsed / 3600.0
-                logger.debug(f"[Counter] serial={serial[:12]} print_hours +={elapsed/3600.0:.3f}h total={self._counters['print_hours']:.1f}h")
+                # logger.debug(f"[Counter] serial={serial[:12]} print_hours +={elapsed/3600.0:.3f}h total={self._counters['print_hours']:.1f}h")
 
         if old.gcode_state == STATE_RUNNING and new.gcode_state == STATE_FINISH:
             self._counters["completion_count"] += 1
@@ -492,7 +515,7 @@ class AlertEngine:
         tasks = self._config.get("maintenance_tasks", [])
         # 此段代码由AI生成，功能为：维护评估 DEBUG 日志
         enabled_count = sum(1 for t in tasks if t.get("enabled", True))
-        logger.debug(f"[Maint] serial={serial[:12]} tasks={len(tasks)} enabled={enabled_count}")
+        # logger.debug(f"[Maint] serial={serial[:12]} tasks={len(tasks)} enabled={enabled_count}")
         for task in tasks:
             if not task.get("enabled", True):
                 continue

@@ -221,6 +221,56 @@ AlertEvent 触发
   ↓ 失败则降级 native
 ```
 
+---
+
+## v1.5.7 (计划) — 日志静默 + 自定义提醒 once 模式
+
+### 背景
+
+1. v1.5.6 的 `LogManager.configure_logger` 仍无法控制子模块 DEBUG 日志输出（AstrBot 框架层强制兜底 DEBUG），决定直接注释掉对终端用户无用的高频推送日志
+2. Cooldown 降温通知在温度 40°C 附近震荡时重复触发，现有的 `edge` 模式因条件短路（True→False→True）无法阻止
+
+### 注释调试日志
+
+3 个文件 9 处 `logger.debug()` → `# logger.debug()`，保留 `logger.info()` 和 `logger.warning()`。
+
+| 文件 | 注释行 | 内容 |
+|------|--------|------|
+| `mqtt_client.py` | 154, 196 | MQTT enqueued / print msg |
+| `printer_manager.py` | 234, 301, 318, 324 | State msg/merged/first init/callback |
+| `alert_engine.py` | 276, 451, 489 | Evaluate / Counter / Maint DEBUG |
+
+### 新增 `once` 触发模式
+
+**动机**：现有 `edge` 模式在温度震荡时重复触发（条件 False→True→False→True）。需要一种"触发一次后锁定"的模式。
+
+**三种模式对比**：
+
+| 模式 | 行为 | 复位条件 | 适用场景 |
+|------|------|----------|----------|
+| `edge` | 每次 F→T 触发一次 | 条件回到 F 即复位 | 进度节点、瞬时事件 |
+| `level` | 持续 T 时周期性触发 | 条件变 F 即停 | 温度/湿度超限保持提醒 |
+| **`once`** | 首次 F→T 触发后**锁定** | 新打印开始（RUNNING 状态转换）复位 | 降温完成、打印失败、一次性通知 |
+
+**实现**：
+
+1. `alert_engine.py __init__`：新增 `self._rule_once_fired: dict[str, bool] = {}`
+2. `_evaluate_custom_rules`：新增 `trigger_mode == "once"` 分支
+   ```python
+   if trigger_mode == "once":
+       if self._rule_once_fired.get(key, False):
+           continue  # 已锁定
+       if not prev and result:  # 首次上升沿
+           cooldown = rule.get("cooldown", 0)
+           if time.time() - self._custom_last_trigger.get(key, 0) < cooldown:
+               continue
+           self._custom_last_trigger[key] = time.time()
+           self._rule_once_fired[key] = True
+   ```
+3. `_evaluate()` 中检测 RUNNING 转换 → `self._rule_once_fired.clear()`
+4. `_conf_schema.json`：自定义规则模板 `trigger_mode` options 追加 `"once"`
+5. Cooldown 降温通知改用 `_rule_once_fired[f"cooldown:{serial}"]` 去重
+
 ## v1.6.0 (计划) — 维护体系核心
 
 主题：维护任务的触发与确认闭环。五项功能内聚于同一核心。
