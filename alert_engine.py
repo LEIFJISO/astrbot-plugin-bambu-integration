@@ -124,31 +124,6 @@ def _build_native_message(event: AlertEvent) -> str:
     return f"🖨️ {name} | {icon} {event.message}\n{event.state_summary}"
 
 
-def _evaluate_builtin(old: PrinterState, new: PrinterState, alert_delay: int) -> list[AlertEvent]:
-    events = []
-    name = new.name or new.model or ""
-    model = new.model or ""
-
-    if old.gcode_state != STATE_FAILED and new.gcode_state == STATE_FAILED:
-        state_summary = _build_state_summary(new)
-        msg = f"打印失败"
-        if new.print_error:
-            msg += f" (错误码: {new.print_error})"
-        if new.hms:
-            hms_str = ", ".join(str(h) for h in new.hms[:3])
-            msg += f" HMS: {hms_str}"
-        events.append(AlertEvent(EVENT_ERROR, new.serial, name, model, state_summary, msg))
-
-    if new.gcode_state == STATE_FINISH and old.gcode_state != STATE_FINISH and old.gcode_state != STATE_IDLE:
-        state_summary = _build_state_summary(new)
-        events.append(AlertEvent(EVENT_COMPLETE, new.serial, name, model, state_summary, "打印完成"))
-
-    if new.gcode_state == STATE_RUNNING and old.gcode_state != new.gcode_state:
-        pass
-
-    return events
-
-
 def _evaluate_progress_nodes(
     old: PrinterState, new: PrinterState, nodes: list[int], alert_delay: int
 ) -> list[AlertEvent]:
@@ -176,6 +151,9 @@ def _evaluate_filament(old: PrinterState, new: PrinterState, threshold: int, ale
     model = new.model or ""
 
     if new.ams_lowest_remain >= 100 or not new.ams:
+        return events
+    # 此段代码由AI生成，功能为：仅在打印中触发耗材提醒，退料/校准/失败状态不误报
+    if new.gcode_state != STATE_RUNNING:
         return events
     if new.ams_lowest_remain <= threshold and old.ams_lowest_remain > threshold:
         state_summary = _build_state_summary(new)
@@ -286,15 +264,9 @@ class AlertEngine:
 
         all_events: list[AlertEvent] = []
 
-        if alerts.get("on_error", True):
-            all_events.extend(_evaluate_builtin(old, new, alert_delay))
-
-        if not new.gcode_state == STATE_FAILED:
-            if alerts.get("on_complete", True):
-                pass
-
         if alerts.get("on_complete", True):
-            if new.gcode_state == STATE_FINISH and old.gcode_state == STATE_RUNNING:
+            # 此段代码由AI生成，功能为：COMPLETE 条件合并（覆盖 RUNNING/PAUSE/PREPARE → FINISH），原 _evaluate_builtin 逻辑
+            if new.gcode_state == STATE_FINISH and old.gcode_state != STATE_FINISH and old.gcode_state != STATE_IDLE:
                 name = new.name or new.model or ""
                 model = new.model or ""
                 all_events.append(AlertEvent(
@@ -303,19 +275,23 @@ class AlertEngine:
                 ))
 
         if alerts.get("on_error", True):
-            if old.gcode_state != STATE_FAILED and new.gcode_state == STATE_FAILED:
-                name = new.name or new.model or ""
-                model = new.model or ""
-                msg = "打印失败"
-                if new.print_error:
-                    msg += f" (错误码: {new.print_error})"
-                if new.hms:
-                    hms_str = ", ".join(str(h) for h in new.hms[:3])
-                    msg += f" HMS: {hms_str}"
-                all_events.append(AlertEvent(
-                    EVENT_ERROR, serial, name, model,
-                    _build_state_summary(new, hms_set, new.msg), msg
-                ))
+            # 此段代码由AI生成，功能为：FAILED once 去重——每个打印周期只提醒一次失败
+            error_key = f"error_failed:{serial}"
+            if not self._rule_once_fired.get(error_key, False):
+                if old.gcode_state != STATE_FAILED and new.gcode_state == STATE_FAILED:
+                    name = new.name or new.model or ""
+                    model = new.model or ""
+                    msg = "打印失败"
+                    if new.print_error:
+                        msg += f" (错误码: {new.print_error})"
+                    if new.hms:
+                        hms_str = ", ".join(str(h) for h in new.hms[:3])
+                        msg += f" HMS: {hms_str}"
+                    all_events.append(AlertEvent(
+                        EVENT_ERROR, serial, name, model,
+                        _build_state_summary(new, hms_set, new.msg), msg
+                    ))
+                    self._rule_once_fired[error_key] = True
 
         progress_str = alerts.get("progress_nodes", "50,90")
         try:
@@ -326,8 +302,14 @@ class AlertEngine:
             all_events.extend(_evaluate_progress_nodes(old, new, nodes, alert_delay))
 
         if alerts.get("on_filament_low", True):
-            threshold = alerts.get("filament_threshold", 10)
-            all_events.extend(_evaluate_filament(old, new, threshold, alert_delay))
+            # 此段代码由AI生成，功能为：耗材低余量 once 去重——每个打印周期只提醒一次
+            filament_key = f"filament_low:{serial}"
+            if not self._rule_once_fired.get(filament_key, False):
+                threshold = alerts.get("filament_threshold", 10)
+                filament_events = _evaluate_filament(old, new, threshold, alert_delay)
+                if filament_events:
+                    self._rule_once_fired[filament_key] = True
+                all_events.extend(filament_events)
 
         if alerts.get("on_cooldown", True):
             # 此段代码由AI生成，功能为：cooldown 去重——每个打印周期只触发一次降温通知
@@ -562,6 +544,9 @@ class AlertEngine:
         mute_range = mutes.get(mute_key, "")
         push_config = self._config.get("push", {})
         mode = push_config.get("mode", "native")
+        # 此段代码由AI生成，功能为：+log 后缀独立控制上下文注入，base 为无后缀模式名
+        do_log = mode.endswith("+log")
+        base = mode[:-4] if do_log else mode
 
         if _mute_active(mute_range) and event.event_type != EVENT_ERROR:
             self._silent_events.setdefault(event.serial, []).append(
@@ -572,16 +557,16 @@ class AlertEngine:
 
         logger.info(f"[Dispatch] serial={event.serial[:12]} type={event.event_type} mode={mode} native={bool(self._on_native)} ai={bool(self._on_ai)}")
 
-        if mode in ("native", "native+log", "both"):
+        if base in ("native", "both"):
             native_msg = _build_native_message(event)
             if event.event_type == EVENT_CUSTOM and event.custom_message:
                 native_msg = event.custom_message if not event.custom_message.startswith("🖨️") else event.custom_message
             if self._on_native:
                 self._on_native(event.serial, native_msg)
 
-        if mode in ("ai", "both"):
+        if base in ("ai", "both"):
             if self._on_ai:
-                asyncio.create_task(self._on_ai(event))
+                asyncio.create_task(self._on_ai(event, do_log=do_log))
 
 
 class FlashQueue:

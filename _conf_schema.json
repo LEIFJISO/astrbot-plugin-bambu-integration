@@ -70,8 +70,8 @@
         "description": "推送模式",
         "type": "string",
         "default": "native",
-        "options": ["native", "native+log", "ai", "both"],
-        "hint": "native: 插件直接发送格式化通知；native+log: 除推送外还将消息注入 AI 对话上下文；ai: 由 LLM 生成通知文案（失败降级 native）；both: native + ai 两条路径同时推送"
+        "options": ["native", "native+log", "ai", "ai+log", "both", "both+log"],
+        "hint": "native: 插件直接发送格式化通知；native+log: 除推送外还将消息注入 AI 对话上下文；ai: 由 LLM 生成通知文案（失败降级 native），不注入上下文；ai+log: AI 生成并注入对话上下文；both: native + ai 双路径推送，不注入上下文；both+log: native + ai 双路径推送并注入对话上下文"
       },
       "enable_llm_tools": {
         "description": "启用 LLM 查询工具",

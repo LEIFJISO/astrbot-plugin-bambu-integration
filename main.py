@@ -72,6 +72,17 @@ class BambuPlugin(Star):
         self._state_path = os.path.join("data", "bambu_state.json")
         self._load_state()
         self._seed_defaults()
+        # 此段代码由AI生成，功能为：推送模式配置迁移——旧 ai/both 升级为 ai+log/both+log（保留原上下文注入行为）
+        push_cfg = self._config.get("push", {})
+        old_mode = push_cfg.get("mode", "native")
+        if old_mode in ("ai", "both"):
+            new_mode = f"{old_mode}+log"
+            push_cfg["mode"] = new_mode
+            try:
+                self._config.save_config()
+                logger.info(f"推送模式配置迁移: {old_mode} → {new_mode}")
+            except Exception as e:
+                logger.warning(f"推送模式配置迁移保存失败: {e}")
         token = self._config.get("cloud", {}).get("access_token", "")
         logger.info(
             f"插件初始化 | token={'已配置' if token else '未配置'} | "
@@ -262,11 +273,12 @@ class BambuPlugin(Star):
     def _on_native_push(self, serial: str, message: str):
         logger.info(f"[推送-原生] serial={serial} msg={message[:60]}")
         asyncio.create_task(self._send_to_session(message))
-        if self._config.get("push", {}).get("mode") == "native+log":
+        # 此段代码由AI生成，功能为：+log 后缀控制上下文注入（native+log / both+log）
+        if self._config.get("push", {}).get("mode", "native").endswith("+log"):
             for umo in self._get_notify_targets():
                 asyncio.create_task(self._inject_to_conversation(umo, "[打印机通知]", message))
 
-    async def _on_ai_push(self, event: AlertEvent):
+    async def _on_ai_push(self, event: AlertEvent, do_log: bool = True):
         push_config = self._config.get("push", {})
         template = push_config.get("ai_prompt", "")
         if not template:
@@ -332,7 +344,9 @@ class BambuPlugin(Star):
             for target in targets:
                 chain = MessageChain().message(ai_text)
                 await self.context.send_message(target, chain)
-                asyncio.create_task(self._inject_to_conversation(target, "[打印机通知]", ai_text))
+                # 此段代码由AI生成，功能为：do_log 控制 AI 推送是否注入对话上下文
+                if do_log:
+                    asyncio.create_task(self._inject_to_conversation(target, "[打印机通知]", ai_text))
         except Exception as e:
             logger.warning(f"AI 推送失败，降级到原生推送: {e}")
             await self._send_to_session(
